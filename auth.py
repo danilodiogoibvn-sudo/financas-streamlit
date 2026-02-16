@@ -1,5 +1,6 @@
 import streamlit as st
 import sqlite3
+import os
 from database import inicializar_banco
 
 # ----------------------------
@@ -15,6 +16,8 @@ def fazer_logout():
         "senha_recem_criada",
         "login_user_candidate",
         "mostrar_criar_senha",
+        "empresa_tmp",
+        "db_tmp",
     ]:
         if k in st.session_state:
             del st.session_state[k]
@@ -38,8 +41,41 @@ def exigir_login():
     st.stop()
 
 
-# Conexão com o cofre de usuários
+# Conexão com o cofre de usuários (admin)
 def conectar_admin():
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    is_postgres = bool(db_url)
+
+    if is_postgres:
+        import psycopg2
+        conn = psycopg2.connect(db_url)
+        cursor = conn.cursor()
+
+        # Cria a tabela se não existir (Postgres)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usuarios (
+                usuario TEXT PRIMARY KEY,
+                senha TEXT,
+                db_nome TEXT,
+                empresa TEXT,
+                ativo INTEGER DEFAULT 1
+            )
+            """
+        )
+
+        # Garante que o Danilo existe
+        cursor.execute("SELECT usuario FROM usuarios WHERE usuario=%s", ("danilo",))
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo) VALUES (%s, %s, %s, %s, %s)",
+                ("danilo", "09011998Dan*", db_url, "Domínio Ferramentas", 1),
+            )
+            conn.commit()
+
+        return conn
+
+    # Local (SQLite)
     conn = sqlite3.connect("admin.db")
     cursor = conn.cursor()
 
@@ -123,6 +159,10 @@ def checar_senha():
     conn = conectar_admin()
     cursor = conn.cursor()
 
+    # Detecta se está no Postgres para usar placeholders corretos
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    usando_postgres = bool(db_url)
+
     try:
         col_espaco1, col_login, col_espaco2 = st.columns([1, 2, 1])
 
@@ -183,10 +223,16 @@ def checar_senha():
                     st.error("⚠️ Digite seu usuário.")
                     return False
 
-                cursor.execute(
-                    "SELECT senha, db_nome, empresa, ativo FROM usuarios WHERE usuario=?",
-                    (usuario_input,),
-                )
+                if usando_postgres:
+                    cursor.execute(
+                        "SELECT senha, db_nome, empresa, ativo FROM usuarios WHERE usuario=%s",
+                        (usuario_input,),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT senha, db_nome, empresa, ativo FROM usuarios WHERE usuario=?",
+                        (usuario_input,),
+                    )
                 resultado = cursor.fetchone()
 
                 if not resultado:
@@ -206,7 +252,13 @@ def checar_senha():
                 if senha_bd == "" or senha_bd is None:
                     st.session_state["mostrar_criar_senha"] = True
                     st.session_state["empresa_tmp"] = empresa
-                    st.session_state["db_tmp"] = db_nome
+
+                    # No cloud, força o db a ser o DATABASE_URL
+                    if usando_postgres:
+                        st.session_state["db_tmp"] = db_url
+                    else:
+                        st.session_state["db_tmp"] = db_nome
+
                     st.info(f"👋 Olá, equipe da **{empresa}**! Defina sua senha de acesso.")
                     st.rerun()
 
@@ -217,11 +269,17 @@ def checar_senha():
 
                 # OK
                 st.session_state["autenticado"] = True
-                st.session_state["db_nome"] = db_nome
+
+                # No cloud, db_nome vira o DATABASE_URL (Neon)
+                if usando_postgres:
+                    st.session_state["db_nome"] = db_url
+                else:
+                    st.session_state["db_nome"] = db_nome
+
                 st.session_state["empresa"] = empresa
                 st.session_state["usuario_atual"] = usuario_input
 
-                inicializar_banco(db_nome)
+                inicializar_banco(st.session_state["db_nome"])
                 st.rerun()
 
             # ----------------------------
@@ -249,10 +307,16 @@ def checar_senha():
                         st.error("⚠️ As senhas não conferem ou estão vazias.")
                         return False
 
-                    cursor.execute(
-                        "UPDATE usuarios SET senha=? WHERE usuario=?",
-                        (nova_senha, u),
-                    )
+                    if usando_postgres:
+                        cursor.execute(
+                            "UPDATE usuarios SET senha=%s WHERE usuario=%s",
+                            (nova_senha, u),
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE usuarios SET senha=? WHERE usuario=?",
+                            (nova_senha, u),
+                        )
                     conn.commit()
 
                     st.success("✅ Senha criada! Agora você já pode entrar.")
