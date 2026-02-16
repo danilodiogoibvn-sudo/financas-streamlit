@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#0057FF"       # Azul Elétrico (Botões e Focos)
+backgroundColor = "#0A0A0A"    # Preto Quase Absoluto (Fundo)
+secondaryBackgroundColor = "#121212" # Cinza muito escuro (Menu Lateral)
+textColor = "#FFFFFF"          # Branco (Textos)
+font = "sans serif"            # Tipografia Clean
+
+[server]
+runOnSave = true
