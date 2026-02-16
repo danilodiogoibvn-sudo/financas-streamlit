@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import date
+import os  # <-- ADICIONADO (para ler DATABASE_URL do Secrets)
 
 # 1) Configuração
 st.set_page_config(
@@ -171,7 +172,20 @@ st.divider()
 # -----------------------------
 menu = st.tabs(["Visão Geral", "Análise Visual"])
 
+# -----------------------------
+# Conexão (SQLite local / Neon no Cloud)
+# -----------------------------
 def conectar():
+    db_url = os.getenv("DATABASE_URL", "").strip()
+
+    # Cloud: Neon/Postgres (persistente)
+    if db_url:
+        import psycopg2
+        return psycopg2.connect(db_url)
+
+    # Local: SQLite
+    if "db_nome" not in st.session_state:
+        st.session_state["db_nome"] = "financas.db"
     return sqlite3.connect(st.session_state["db_nome"])
 
 # -----------------------------
