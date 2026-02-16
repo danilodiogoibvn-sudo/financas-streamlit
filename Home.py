@@ -178,7 +178,7 @@ menu = st.tabs(["Visão Geral", "Análise Visual"])
 # Conexão (SQLite local / Neon no Cloud)
 # -----------------------------
 def conectar():
-    db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = os.getenv("postgresql://neondb_owner:npg_osNdK4mh1zTu@ep-long-frog-ac6v6hba-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require", "").strip()
 
     # Cloud: Neon/Postgres (persistente)
     if db_url:
@@ -327,3 +327,4 @@ with menu[1]:
             st.plotly_chart(fig_pizza, use_container_width=True)
         else:
             st.info("Nenhuma despesa prevista para este mês.")
+
