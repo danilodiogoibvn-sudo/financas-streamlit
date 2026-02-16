@@ -3,7 +3,9 @@ import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import date
-import os  # <-- ADICIONADO (para ler DATABASE_URL do Secrets)
+import os
+
+from database import inicializar_banco  # <-- ADICIONADO (garante tabelas antes do SELECT)
 
 # 1) Configuração
 st.set_page_config(
@@ -187,6 +189,9 @@ def conectar():
     if "db_nome" not in st.session_state:
         st.session_state["db_nome"] = "financas.db"
     return sqlite3.connect(st.session_state["db_nome"])
+
+# ✅ GARANTE QUE AS TABELAS EXISTEM ANTES DO SELECT (resolve o erro do Pandas no Neon)
+inicializar_banco(os.getenv("DATABASE_URL", st.session_state.get("db_nome", "financas.db")))
 
 # -----------------------------
 # Dados
