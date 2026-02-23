@@ -1,24 +1,25 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 import plotly.express as px
 from datetime import date
-import os
 
-from database import inicializar_banco  # <-- ADICIONADO (garante tabelas antes do SELECT)
+from database import inicializar_banco, conectar_banco
+from auth import checar_senha, fazer_logout  # se seu arquivo for auth.py minúsculo, troque aqui
 
 # 1) Configuração
 st.set_page_config(
     page_title="Sistema Financeiro",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed"  # deixa a sidebar recolhida por padrão
+    initial_sidebar_state="collapsed"
 )
-st.logo("logo.png")
+
+try:
+    st.logo("logo.png")
+except Exception:
+    pass
 
 # ✅ AJUSTE DE LAYOUT (LOGIN MAIS EM CIMA + LOGO DO SIDEBAR MELHOR)
-# (Somente CSS - não muda estrutura)
-# ⚠️ CORREÇÃO: removi o margin-top negativo no stForm que estava "sumindo" o login em algumas telas/temas
 st.markdown("""
 <style>
 /* =========================
@@ -32,9 +33,6 @@ st.markdown("""
 [data-testid="stAppViewContainer"] > .main{
     padding-top: 0rem !important;
 }
-
-/* NÃO mexer no stForm com margin negativo aqui (isso foi o que fez sumir pra você) */
-/* div[data-testid="stForm"]{ margin-top: -18px !important; } */
 
 /* =========================
    2) Sidebar: melhora o logo acima do menu
@@ -61,7 +59,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2) Segurança
-from auth import checar_senha, fazer_logout
 if not checar_senha():
     st.stop()
 
@@ -69,14 +66,14 @@ if not checar_senha():
 # Helpers visuais e formatação
 # -----------------------------
 MESES_PT = {
-    1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
-    7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
 }
 
 def fmt_brl(x: float) -> str:
     try:
-        return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
+        return f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
         return "R$ 0,00"
 
 def icon_svg(name: str) -> str:
@@ -102,7 +99,6 @@ def icon_svg(name: str) -> str:
     return icons.get(name, "")
 
 def metric_card(title: str, value: str, footer_text: str, footer_color: str, icon_html: str = ""):
-    # footer_color: "green" | "red" | "gray"
     color_map = {
         "green": ("rgba(0, 204, 150, 0.18)", "#00CC96", "↑"),
         "red": ("rgba(255, 75, 75, 0.18)", "#FF4B4B", "↓"),
@@ -127,6 +123,28 @@ def metric_card(title: str, value: str, footer_text: str, footer_color: str, ico
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+# -----------------------------
+# Conexão (SQLite local / Neon no Cloud) via database.py
+# -----------------------------
+def conectar():
+    """
+    Usa o valor já salvo pelo Auth.py em st.session_state["db_nome"].
+    - Local: "financas.db" / "dominio.db"
+    - Cloud (Neon): "postgresql://..."
+    """
+    db_ref = st.session_state.get("db_nome")
+
+    # fallback local (caso rode sem passar pelo fluxo normal)
+    if not db_ref:
+        db_ref = "financas.db"
+        st.session_state["db_nome"] = db_ref
+
+    conn, engine = conectar_banco(db_ref)
+    return conn, engine
+
+# ✅ Garante tabelas antes do SELECT (SQLite ou Neon)
+inicializar_banco(st.session_state.get("db_nome", "financas.db"))
 
 # -----------------------------
 # Topbar (D.Tech + usuário + sair)
@@ -175,47 +193,37 @@ st.divider()
 menu = st.tabs(["Visão Geral", "Análise Visual"])
 
 # -----------------------------
-# Conexão (SQLite local / Neon no Cloud)
-# -----------------------------
-def conectar():
-    db_url = os.getenv("postgresql://neondb_owner:npg_osNdK4mh1zTu@ep-long-frog-ac6v6hba-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require", "").strip()
-
-    # Cloud: Neon/Postgres (persistente)
-    if db_url:
-        import psycopg2
-        return psycopg2.connect(db_url)
-
-    # Local: SQLite
-    if "db_nome" not in st.session_state:
-        st.session_state["db_nome"] = "financas.db"
-    return sqlite3.connect(st.session_state["db_nome"])
-
-# ✅ GARANTE QUE AS TABELAS EXISTEM ANTES DO SELECT (resolve o erro do Pandas no Neon)
-inicializar_banco(os.getenv("DATABASE_URL", st.session_state.get("db_nome", "financas.db")))
-
-# -----------------------------
 # Dados
 # -----------------------------
-conn = conectar()
-df = pd.read_sql_query("""
-    SELECT 
-        t.tipo,
-        t.valor,
-        t.data_prevista,
-        t.data_real,
-        t.status,
-        c.nome as categoria
-    FROM transactions t
-    LEFT JOIN categories c ON t.categoria_id = c.id
-""", conn)
-conn.close()
+conn, engine = conectar()
+try:
+    # Sem parâmetros aqui, então funciona igual nos dois bancos
+    df = pd.read_sql_query("""
+        SELECT 
+            t.tipo,
+            t.valor,
+            t.data_prevista,
+            t.data_real,
+            t.status,
+            c.nome as categoria
+        FROM transactions t
+        LEFT JOIN categories c ON t.categoria_id = c.id
+    """, conn)
+finally:
+    conn.close()
 
 if df.empty:
     st.info("Bem-vindo! Cadastre contas, categorias e lançamentos para visualizar seu painel.")
     st.stop()
 
-df["data_prevista"] = pd.to_datetime(df["data_prevista"], errors="coerce").dt.date
-df["data_real"] = pd.to_datetime(df["data_real"], errors="coerce").dt.date
+# Padronização básica para evitar erros de acentuação/capitalização
+df["tipo"] = df["tipo"].astype(str).str.strip()
+df["status"] = df["status"].astype(str).str.strip()
+if "categoria" in df.columns:
+    df["categoria"] = df["categoria"].fillna("Sem categoria")
+
+df["data_prevista"] = pd.to_datetime(df["data_prevista"], errors="coerce")
+df["data_real"] = pd.to_datetime(df["data_real"], errors="coerce")
 
 hoje = date.today()
 mes_atual = hoje.month
@@ -226,24 +234,40 @@ titulo_mes = f"{mes_nome} / {ano_atual}"
 # -----------------------------
 # KPIs
 # -----------------------------
-df_realizado = df[df["status"] == "Realizado"]
+df_realizado = df[df["status"].str.lower() == "realizado"]
 
-total_entradas_reais = df_realizado[df_realizado["tipo"] == "Entrada"]["valor"].sum()
-total_saidas_reais = df_realizado[df_realizado["tipo"] == "Saída"]["valor"].sum()
+total_entradas_reais = float(df_realizado[df_realizado["tipo"] == "Entrada"]["valor"].sum())
+total_saidas_reais = float(df_realizado[df_realizado["tipo"] == "Saída"]["valor"].sum())
 saldo_atual = float(total_entradas_reais - total_saidas_reais)
 
 df_mes_previsto = df[
-    (pd.to_datetime(df["data_prevista"]).dt.month == mes_atual) &
-    (pd.to_datetime(df["data_prevista"]).dt.year == ano_atual)
-]
-df_mes_realizado = df_realizado[
-    (pd.to_datetime(df_realizado["data_real"]).dt.month == mes_atual) &
-    (pd.to_datetime(df_realizado["data_real"]).dt.year == ano_atual)
+    (df["data_prevista"].dt.month == mes_atual) &
+    (df["data_prevista"].dt.year == ano_atual)
 ]
 
-total_receber_mes = float(df_mes_previsto[(df_mes_previsto["tipo"] == "Entrada") & (df_mes_previsto["status"] == "Previsto")]["valor"].sum())
-total_pagar_mes = float(df_mes_previsto[(df_mes_previsto["tipo"] == "Saída") & (df_mes_previsto["status"] == "Previsto")]["valor"].sum())
-resultado_mes = float(df_mes_realizado[df_mes_realizado["tipo"] == "Entrada"]["valor"].sum() - df_mes_realizado[df_mes_realizado["tipo"] == "Saída"]["valor"].sum())
+df_mes_realizado = df_realizado[
+    (df_realizado["data_real"].dt.month == mes_atual) &
+    (df_realizado["data_real"].dt.year == ano_atual)
+]
+
+total_receber_mes = float(
+    df_mes_previsto[
+        (df_mes_previsto["tipo"] == "Entrada") &
+        (df_mes_previsto["status"].str.lower() == "previsto")
+    ]["valor"].sum()
+)
+
+total_pagar_mes = float(
+    df_mes_previsto[
+        (df_mes_previsto["tipo"] == "Saída") &
+        (df_mes_previsto["status"].str.lower() == "previsto")
+    ]["valor"].sum()
+)
+
+resultado_mes = float(
+    df_mes_realizado[df_mes_realizado["tipo"] == "Entrada"]["valor"].sum()
+    - df_mes_realizado[df_mes_realizado["tipo"] == "Saída"]["valor"].sum()
+)
 
 # -----------------------------
 # ABA 1: Visão Geral
@@ -306,9 +330,14 @@ with menu[1]:
                 float(df_mes_realizado[df_mes_realizado["tipo"] == "Saída"]["valor"].sum())
             ]
         })
+
         fig_barras = px.bar(
-            dados_barras, x="Tipo", y="Valor", color="Tipo",
-            text_auto=".2s", template="plotly_dark"
+            dados_barras,
+            x="Tipo",
+            y="Valor",
+            color="Tipo",
+            text_auto=".2s",
+            template="plotly_dark"
         )
         fig_barras.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig_barras, use_container_width=True)
@@ -316,10 +345,15 @@ with menu[1]:
     with g2:
         st.markdown("**Despesas por categoria (Previsto no mês)**")
         df_despesas = df_mes_previsto[df_mes_previsto["tipo"] == "Saída"]
+
         if not df_despesas.empty:
-            df_pizza = df_despesas.groupby("categoria")["valor"].sum().reset_index()
+            df_pizza = df_despesas.groupby("categoria", dropna=False)["valor"].sum().reset_index()
+
             fig_pizza = px.pie(
-                df_pizza, values="valor", names="categoria", hole=0.4,
+                df_pizza,
+                values="valor",
+                names="categoria",
+                hole=0.4,
                 template="plotly_dark"
             )
             fig_pizza.update_traces(textposition="inside", textinfo="percent+label")
@@ -327,4 +361,3 @@ with menu[1]:
             st.plotly_chart(fig_pizza, use_container_width=True)
         else:
             st.info("Nenhuma despesa prevista para este mês.")
-
