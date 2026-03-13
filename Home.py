@@ -12,15 +12,15 @@ from components import metric_card, icon_svg
 
 # 1) Configuração
 st.set_page_config(
-    page_title="Sistema Financeiro",
-    page_icon="📊",
+    page_title="Contas a Pagar | D.Tech", 
+    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 try:
     st.logo("logo.png")
-except Exception:
+except:
     pass
 
 # Aplica toda a identidade visual de uma vez só!
