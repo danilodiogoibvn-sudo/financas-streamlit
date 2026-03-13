@@ -4,10 +4,10 @@ import pandas as pd
 import plotly.express as px
 from datetime import date, timedelta
 
-# --- IMPORTANDO SEUS NOVOS MÓDULOS D.TECH ---
 from style import carregar_estilos
 from components import metric_card, icon_svg
 from auth import exigir_login
+from database import conectar_banco
 
 st.set_page_config(page_title="Fluxo de Caixa", page_icon="📊", layout="wide")
 
@@ -16,7 +16,6 @@ try:
 except:
     pass
 
-# Aplica a identidade visual global D.Tech
 carregar_estilos()
 
 exigir_login()
@@ -24,30 +23,20 @@ exigir_login()
 st.title("Fluxo de Caixa")
 st.markdown("<span style='color: #A0AEC0;'>Visão diária das entradas, saídas e evolução do saldo acumulado.</span>", unsafe_allow_html=True)
 
-from database import conectar_banco
-
+# ==========================================
+# BANCO DE DADOS HÍBRIDO
+# ==========================================
 def conectar():
-    db_nome = st.session_state.get("db_nome", "financas.db")
+    db_nome = st.session_state.get("db_nome", "financeiro.db")
     conn, engine = conectar_banco(db_nome)
     return conn, engine
-
-def executar_sql(conn, engine, query, params=()):
-    if engine == "postgres" and params:
-        query = query.replace("?", "%s")
-    cur = conn.cursor()
-    cur.execute(query, params)
-    conn.commit()
-    try: return cur.lastrowid
-    except: return 0
 
 # -----------------------------
 # Helpers
 # -----------------------------
 def fmt_brl(x: float) -> str:
-    try:
-        return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
-        return "R$ 0,00"
+    try: return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except: return "R$ 0,00"
 
 # -----------------------------
 # Período
@@ -60,26 +49,18 @@ ultimo_dia_mes = (primeiro_dia_mes + timedelta(days=32)).replace(day=1) - timede
 
 cA, cB, cC = st.columns([1.2, 1.2, 2])
 
-with cA:
-    preset = st.selectbox("Atalho", ["Este mês", "Últimos 30 dias", "Últimos 90 dias", "Personalizado"], index=0)
-with cB:
-    base = st.selectbox("Base", ["Previsto (data_prevista)", "Realizado (data_real)"], index=0)
+with cA: preset = st.selectbox("Atalho", ["Este mês", "Últimos 30 dias", "Últimos 90 dias", "Personalizado"], index=0)
+with cB: base = st.selectbox("Base", ["Previsto (data_prevista)", "Realizado (data_real)"], index=0)
 
-if preset == "Este mês":
-    data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
-elif preset == "Últimos 30 dias":
-    data_inicio_padrao, data_fim_padrao = hoje - timedelta(days=30), hoje
-elif preset == "Últimos 90 dias":
-    data_inicio_padrao, data_fim_padrao = hoje - timedelta(days=90), hoje
-else:
-    data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
+if preset == "Este mês": data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
+elif preset == "Últimos 30 dias": data_inicio_padrao, data_fim_padrao = hoje - timedelta(days=30), hoje
+elif preset == "Últimos 90 dias": data_inicio_padrao, data_fim_padrao = hoje - timedelta(days=90), hoje
+else: data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
 
 with cC:
     d1, d2 = st.columns(2)
-    with d1:
-        data_inicio = st.date_input("Data inicial", value=data_inicio_padrao, disabled=(preset != "Personalizado"))
-    with d2:
-        data_fim = st.date_input("Data final", value=data_fim_padrao, disabled=(preset != "Personalizado"))
+    with d1: data_inicio = st.date_input("Data inicial", value=data_inicio_padrao, disabled=(preset != "Personalizado"))
+    with d2: data_fim = st.date_input("Data final", value=data_fim_padrao, disabled=(preset != "Personalizado"))
 
 if data_fim < data_inicio:
     data_inicio, data_fim = data_fim, data_inicio
@@ -87,7 +68,7 @@ if data_fim < data_inicio:
 # -----------------------------
 # Dados
 # -----------------------------
-conn = conectar()
+conn, engine = conectar()
 if base.startswith("Realizado"):
     df = pd.read_sql_query("SELECT tipo, valor, data_real as data_base FROM transactions WHERE data_real IS NOT NULL", conn)
 else:
@@ -101,7 +82,6 @@ if df.empty:
 df["data_base"] = pd.to_datetime(df["data_base"], errors="coerce").dt.date
 df = df.dropna(subset=["data_base"])
 
-# Saldo inicial
 df_antes = df[df["data_base"] < data_inicio]
 entradas_antes = df_antes[df_antes["tipo"] == "Entrada"]["valor"].sum()
 saidas_antes = df_antes[df_antes["tipo"] == "Saída"]["valor"].sum()
@@ -115,16 +95,10 @@ if df_periodo.empty:
     metric_card("Saldo inicial", fmt_brl(saldo_inicial), "Antes do período", "gray", icon_svg("wallet"))
     st.stop()
 
-df_agrupado = (
-    df_periodo
-    .pivot_table(index="data_base", columns="tipo", values="valor", aggfunc="sum")
-    .fillna(0)
-)
+df_agrupado = df_periodo.pivot_table(index="data_base", columns="tipo", values="valor", aggfunc="sum").fillna(0)
 
-if "Entrada" not in df_agrupado.columns:
-    df_agrupado["Entrada"] = 0.0
-if "Saída" not in df_agrupado.columns:
-    df_agrupado["Saída"] = 0.0
+if "Entrada" not in df_agrupado.columns: df_agrupado["Entrada"] = 0.0
+if "Saída" not in df_agrupado.columns: df_agrupado["Saída"] = 0.0
 
 df_agrupado["Saldo do Dia"] = df_agrupado["Entrada"] - df_agrupado["Saída"]
 df_agrupado["Saldo Acumulado"] = saldo_inicial + df_agrupado["Saldo do Dia"].cumsum()
@@ -143,14 +117,10 @@ st.subheader("Resumo do período")
 
 m1, m2, m3, m4 = st.columns(4)
 
-with m1:
-    metric_card("Saldo inicial", fmt_brl(saldo_inicial), "Antes do período", "gray", icon_svg("wallet"))
-with m2:
-    metric_card("Entradas", fmt_brl(total_entradas), "Receitas no período", "green", icon_svg("up"))
-with m3:
-    metric_card("Saídas", fmt_brl(total_saidas), "Despesas no período", "red" if total_saidas > 0 else "green", icon_svg("down"))
-with m4:
-    metric_card("Saldo final", fmt_brl(saldo_final), f"Resultado: {fmt_brl(resultado)}", "green" if saldo_final >= 0 else "red", icon_svg("trend"))
+with m1: metric_card("Saldo inicial", fmt_brl(saldo_inicial), "Antes do período", "gray", icon_svg("wallet"))
+with m2: metric_card("Entradas", fmt_brl(total_entradas), "Receitas no período", "green", icon_svg("up"))
+with m3: metric_card("Saídas", fmt_brl(total_saidas), "Despesas no período", "red" if total_saidas > 0 else "green", icon_svg("down"))
+with m4: metric_card("Saldo final", fmt_brl(saldo_final), f"Resultado: {fmt_brl(resultado)}", "green" if saldo_final >= 0 else "red", icon_svg("trend"))
 
 # -----------------------------
 # Gráficos
@@ -162,40 +132,22 @@ g1, g2 = st.columns([2, 1])
 
 with g1:
     fig_line = px.line(
-        df_agrupado,
-        x="Data",
-        y="Saldo Acumulado",
-        markers=True,
-        labels={"Data": "Data", "Saldo Acumulado": "Saldo (R$)"},
-        template="plotly_dark"
+        df_agrupado, x="Data", y="Saldo Acumulado", markers=True,
+        labels={"Data": "Data", "Saldo Acumulado": "Saldo (R$)"}, template="plotly_dark"
     )
-    # A linha fica Ciano se for positivo e Vermelha se for negativo
     cor_linha = "#00D1FF" if saldo_final >= 0 else "#FF4B4B"
     fig_line.update_traces(line=dict(color=cor_linha, width=3), marker=dict(size=7))
-    fig_line.update_layout(
-        margin=dict(l=0, r=0, t=30, b=0),
-        paper_bgcolor='rgba(0,0,0,0)', # Fundo transparente para mesclar com D.Tech
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
+    fig_line.update_layout(margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_line, use_container_width=True)
 
 with g2:
     df_totais = pd.DataFrame({"Tipo": ["Entradas", "Saídas"], "Valor": [total_entradas, total_saidas]})
     fig_bar = px.bar(
-        df_totais, 
-        x="Tipo", 
-        y="Valor", 
-        color="Tipo", 
+        df_totais, x="Tipo", y="Valor", color="Tipo", 
         color_discrete_map={"Entradas": "#00D1FF", "Saídas": "#FF4B4B"}, 
-        text_auto=".2s", 
-        template="plotly_dark"
+        text_auto=".2s", template="plotly_dark"
     )
-    fig_bar.update_layout(
-        showlegend=False, 
-        margin=dict(l=0, r=0, t=30, b=0),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
+    fig_bar.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # -----------------------------
