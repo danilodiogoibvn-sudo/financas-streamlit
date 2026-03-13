@@ -69,7 +69,7 @@ def conectar_admin():
         if not cursor.fetchone():
             cursor.execute(
                 "INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo) VALUES (%s, %s, %s, %s, %s)",
-                ("danilo", "09011998Dan*", db_url, "Domínio Ferramentas", 1),
+                ("danilo", "09011998Dan*", db_url, "Danilo Diogo", 1),
             )
             conn.commit()
 
