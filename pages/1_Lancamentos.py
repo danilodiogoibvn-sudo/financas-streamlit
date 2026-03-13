@@ -4,20 +4,50 @@ from datetime import date, datetime
 import re
 import calendar
 
-# --- IMPORTANDO SEUS NOVOS MÓDULOS D.TECH ---
-from style import carregar_estilos
-from components import icon_svg
-from auth import exigir_login
-from database import conectar_banco # <-- IMPORTANTE: Puxando do seu sistema!
+# --- 🚀 OS DOIS IMPORTS NOVOS PARA O IPHONE ---
+import base64
+import streamlit.components.v1 as components
 
-# 1) Configuração
+# --- IMPORTANDO SEUS MÓDULOS D.TECH ---
+from style import carregar_estilos
+from components import metric_card, icon_svg
+from auth import exigir_login
+from database import conectar_banco
+
+# ==========================================
+# 1) CONFIGURAÇÃO DA PÁGINA
+# ==========================================
 st.set_page_config(
-    page_title="Contas a Pagar | D.Tech", 
-    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
+    page_title="Sistema Financeiro | D.Tech", # Troque o título dependendo da página
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+# ==========================================
+# 2) TRUQUE MÁGICO DO IPHONE (Apple Touch Icon)
+# ==========================================
+try:
+    with open("logo.png", "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+        
+    components.html(
+        f"""
+        <script>
+            var link = window.parent.document.createElement('link');
+            link.rel = 'apple-touch-icon';
+            link.href = 'data:image/png;base64,{img_b64}';
+            window.parent.document.head.appendChild(link);
+        </script>
+        """,
+        height=0, width=0
+    )
+except:
+    pass
+
+# ==========================================
+# 3) LOGO DO MENU LATERAL
+# ==========================================
 try:
     st.logo("logo.png")
 except:
