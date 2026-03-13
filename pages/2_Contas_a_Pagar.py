@@ -96,7 +96,6 @@ def badge_status_minimal(status: str, atrasado: bool) -> str:
 # -----------------------------
 try:
     conn, engine = conectar()
-    # Tiramos os "AS NomeDaColuna" daqui
     df = pd.read_sql_query("""
         SELECT t.id, t.descricao, c.nome, t.data_prevista, t.valor, t.status
         FROM transactions t
@@ -106,7 +105,7 @@ try:
     """, conn)
     conn.close()
     
-    # 🚀 O SEGREDO ESTÁ AQUI: Forçamos o nome exato que o Pandas precisa!
+    # Blindando os nomes das colunas
     df.columns = ["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"]
     
 except Exception as e:
@@ -115,7 +114,6 @@ except Exception as e:
 
 if df.empty:
     st.info("Nenhuma despesa registrada ainda.")
-    # Garante que as colunas existam mesmo se vier vazio para não quebrar lá embaixo
     df = pd.DataFrame(columns=["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"])
 
 for col in ["Fornecedor_Descricao", "Categoria", "Status_BD"]:
@@ -126,11 +124,13 @@ df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce").dt.date
 df["Venc_dt"] = pd.to_datetime(df["Vencimento"], errors="coerce")
 
 hoje = date.today()
-em_7 = hoje + timedelta(days=7)ef definir_status_label(row):
+em_7 = hoje + timedelta(days=7)
+
+def definir_status_label(row):
     if str(row["Status_BD"]) == "Realizado": return "Realizado"
     if row["Vencimento"] is None: return "A pagar"
     if row["Vencimento"] < hoje: return "Atrasado"
-    if hoje <= row["Vencimento"] <= em_7: return "Recebe em 7 dias" # Mantendo a lógica do seu código original
+    if hoje <= row["Vencimento"] <= em_7: return "Recebe em 7 dias"
     return "A pagar"
 
 if not df.empty:
