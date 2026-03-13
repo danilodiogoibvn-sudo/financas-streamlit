@@ -96,20 +96,27 @@ def badge_status_minimal(status: str, atrasado: bool) -> str:
 # -----------------------------
 try:
     conn, engine = conectar()
+    # Tiramos os "AS NomeDaColuna" daqui
     df = pd.read_sql_query("""
-        SELECT t.id, t.descricao as Fornecedor_Descricao, c.nome as Categoria, t.data_prevista as Vencimento, t.valor as Valor, t.status as Status_BD
+        SELECT t.id, t.descricao, c.nome, t.data_prevista, t.valor, t.status
         FROM transactions t
         LEFT JOIN categories c ON t.categoria_id = c.id
         WHERE t.tipo = 'Saída'
         ORDER BY t.data_prevista ASC
     """, conn)
     conn.close()
+    
+    # 🚀 O SEGREDO ESTÁ AQUI: Forçamos o nome exato que o Pandas precisa!
+    df.columns = ["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"]
+    
 except Exception as e:
     st.error(f"Erro ao conectar banco: {e}")
     st.stop()
 
 if df.empty:
     st.info("Nenhuma despesa registrada ainda.")
+    # Garante que as colunas existam mesmo se vier vazio para não quebrar lá embaixo
+    df = pd.DataFrame(columns=["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"])
 
 for col in ["Fornecedor_Descricao", "Categoria", "Status_BD"]:
     if col in df.columns:
@@ -119,9 +126,7 @@ df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce").dt.date
 df["Venc_dt"] = pd.to_datetime(df["Vencimento"], errors="coerce")
 
 hoje = date.today()
-em_7 = hoje + timedelta(days=7)
-
-def definir_status_label(row):
+em_7 = hoje + timedelta(days=7)ef definir_status_label(row):
     if str(row["Status_BD"]) == "Realizado": return "Realizado"
     if row["Vencimento"] is None: return "A pagar"
     if row["Vencimento"] < hoje: return "Atrasado"
