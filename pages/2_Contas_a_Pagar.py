@@ -50,8 +50,21 @@ st.markdown("<span style='color: #A0AEC0;'>Acompanhe compromissos, fornecedores 
 if "db_nome" not in st.session_state:
     st.session_state["db_nome"] = "financeiro.db" 
 
+from database import conectar_banco
+
 def conectar():
-    return sqlite3.connect(st.session_state["db_nome"])
+    db_nome = st.session_state.get("db_nome", "financas.db")
+    conn, engine = conectar_banco(db_nome)
+    return conn, engine
+
+def executar_sql(conn, engine, query, params=()):
+    if engine == "postgres" and params:
+        query = query.replace("?", "%s")
+    cur = conn.cursor()
+    cur.execute(query, params)
+    conn.commit()
+    try: return cur.lastrowid
+    except: return 0
 
 MESES_PT = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
