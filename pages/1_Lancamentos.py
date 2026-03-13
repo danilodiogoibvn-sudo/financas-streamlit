@@ -1,5 +1,4 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import date, datetime
 import re
@@ -9,6 +8,7 @@ import calendar
 from style import carregar_estilos
 from components import icon_svg
 from auth import exigir_login
+from database import conectar_banco # <-- IMPORTANTE: Puxando do seu sistema!
 
 # 1. Configuração
 st.set_page_config(page_title="Lançamentos", page_icon="💸", layout="wide")
@@ -18,10 +18,8 @@ try:
 except:
     pass
 
-# Aplica a identidade visual global D.Tech
 carregar_estilos()
 
-# Estilo específico apenas para a Tabela desta página
 st.markdown("""
 <style>
 /* ===== TABELA SaaS D.TECH ===== */
@@ -31,8 +29,8 @@ thead th {
     font-weight:800;
     letter-spacing:0.5px;
     padding:12px 12px;
-    border-bottom:1px solid rgba(0, 209, 255, 0.3); /* Linha Ciano */
-    background:rgba(0, 209, 255, 0.05); /* Fundo Ciano super suave */
+    border-bottom:1px solid rgba(0, 209, 255, 0.3);
+    background:rgba(0, 209, 255, 0.05);
     color: #00D1FF;
 }
 tbody td {
@@ -40,23 +38,39 @@ tbody td {
     border-bottom:1px solid rgba(255,255,255,0.05);
     vertical-align:middle;
 }
-tbody tr:hover td {
-    background:rgba(255,255,255,0.02);
-}
+tbody tr:hover td { background:rgba(255,255,255,0.02); }
 </style>
 """, unsafe_allow_html=True)
 
-# 2. Segurança
 exigir_login()
 
 st.title("Lançamentos")
 st.markdown("<span style='color: #A0AEC0;'>Registre suas entradas e saídas financeiras conectadas às suas contas e categorias.</span>", unsafe_allow_html=True)
 
+# ==========================================
+# NOVAS FUNÇÕES DE BANCO DE DADOS (Híbridas)
+# ==========================================
 def conectar():
-    if "db_nome" not in st.session_state:
-        st.session_state["db_nome"] = "financas.db"
-    return sqlite3.connect(st.session_state["db_nome"])
+    db_nome = st.session_state.get("db_nome", "financas.db")
+    conn, engine = conectar_banco(db_nome)
+    return conn, engine
 
+def executar_sql(conn, engine, query, params=()):
+    # Se for Postgres, troca os "?" do SQLite por "%s" para não dar erro
+    if engine == "postgres" and params:
+        query = query.replace("?", "%s")
+    
+    cur = conn.cursor()
+    cur.execute(query, params)
+    conn.commit()
+    try:
+        return cur.lastrowid
+    except:
+        return 0
+
+# -----------------------------
+# Helpers
+# -----------------------------
 MESES_PT = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
     7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
@@ -111,8 +125,7 @@ def badge_status_minimal(status: str, atrasado: bool) -> str:
         icon = icon_svg("clock")
         texto = "Previsto"
 
-    html = f"""<span style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:{cor_tx}; background:{cor_bg}; border:1px solid rgba(255,255,255,0.08); white-space:nowrap;"><span style="display:inline-flex; color:{cor_tx};">{icon}</span>{texto}</span>"""
-    return html
+    return f"""<span style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:{cor_tx}; background:{cor_bg}; border:1px solid rgba(255,255,255,0.08); white-space:nowrap;"><span style="display:inline-flex; color:{cor_tx};">{icon}</span>{texto}</span>"""
 
 def seletor_data_ptbr(prefix_key: str, label: str, default: date):
     st.markdown(f"**{label}**")
@@ -141,9 +154,8 @@ def seletor_data_ptbr(prefix_key: str, label: str, default: date):
     return date(int(ano), int(mes), int(dia))
 
 def garantir_audit_log():
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("""
+    conn, engine = conectar()
+    executar_sql(conn, engine, """
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             data_hora TEXT,
@@ -152,40 +164,22 @@ def garantir_audit_log():
             detalhes TEXT
         )
     """)
-    cur.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY, nome TEXT)")
-    cur.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY, nome TEXT, tipo TEXT)")
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT,
-            descricao TEXT,
-            valor REAL,
-            data_prevista TEXT,
-            data_real TEXT,
-            status TEXT,
-            conta_id INTEGER,
-            categoria_id INTEGER
-        )
-    """)
-    conn.commit()
     conn.close()
 
 def registrar_log(acao: str, detalhes: str):
     try:
-        garantir_audit_log()
-        conn = conectar()
-        cur = conn.cursor()
+        conn, engine = conectar()
         usuario = st.session_state.get("usuario_atual", "desconhecido")
         agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cur.execute("INSERT INTO audit_log (data_hora, usuario, acao, detalhes) VALUES (?, ?, ?, ?)", (agora, usuario, acao, detalhes))
-        conn.commit()
+        executar_sql(conn, engine, "INSERT INTO audit_log (data_hora, usuario, acao, detalhes) VALUES (?, ?, ?, ?)", (agora, usuario, acao, detalhes))
         conn.close()
     except:
         pass
 
-garantir_audit_log()
-
-conn = conectar()
+# -----------------------------
+# DADOS INICIAIS
+# -----------------------------
+conn, engine = conectar()
 df_contas = pd.read_sql_query("SELECT id, nome FROM accounts", conn)
 df_categorias = pd.read_sql_query("SELECT id, nome, tipo FROM categories", conn)
 conn.close()
@@ -219,13 +213,11 @@ else:
                     categoria_id = dict_categorias[categoria_selecionada]
                     data_real = data_prevista if status == "Realizado" else None
 
-                    conn = conectar()
-                    cursor = conn.cursor()
-                    cursor.execute("""
+                    conn, engine = conectar()
+                    executar_sql(conn, engine, """
                         INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id))
-                    conn.commit()
                     conn.close()
 
                     st.success("Lançamento salvo com sucesso!")
@@ -262,7 +254,7 @@ else:
         with f7:
             conta_sel = st.selectbox("Conta", options=["Todas"] + sorted(df_contas["nome"].unique().tolist()))
 
-        conn = conectar()
+        conn, engine = conectar()
         query = """
             SELECT t.id as ID, t.status as Status, t.data_prevista as Data, t.tipo as Tipo, t.descricao as Descrição, c.nome as Categoria, a.nome as Conta, t.valor as Valor
             FROM transactions t
@@ -338,7 +330,7 @@ else:
     st.divider()
     st.subheader("Gerenciar Lançamentos")
 
-    conn = conectar()
+    conn, engine = conectar()
     df_raw = pd.read_sql_query("""
         SELECT t.id, t.tipo, t.descricao, t.valor, t.data_prevista, t.status, a.nome as conta_nome, c.nome as categoria_nome, t.conta_id, t.categoria_id
         FROM transactions t
@@ -398,27 +390,22 @@ else:
                     st.error("⚠️ Descrição não pode ficar vazia e o valor deve ser maior que zero.")
                 else:
                     data_real = data_edit if status_edit == "Realizado" else None
-                    conn = conectar()
-                    conn.execute("""
+                    conn, engine = conectar()
+                    executar_sql(conn, engine, """
                         UPDATE transactions SET tipo = ?, descricao = ?, valor = ?, data_prevista = ?, data_real = ?, status = ?, conta_id = ?, categoria_id = ? WHERE id = ?
                     """, (tipo_edit, descricao_edit.strip(), float(valor_edit), data_edit, data_real, status_edit, conta_edit_id, categoria_edit_id, int(id_selecionado)))
-                    conn.commit()
                     conn.close()
                     st.success("✅ Lançamento atualizado com sucesso!")
                     st.rerun()
 
         with a2:
             if st.button("Duplicar", use_container_width=True):
-                conn = conectar()
-                cursor = conn.cursor()
-                cursor.execute("""
+                conn, engine = conectar()
+                novo_id = executar_sql(conn, engine, """
                     INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id)
                     SELECT tipo, descricao, valor, data_prevista, NULL, 'Previsto', conta_id, categoria_id FROM transactions WHERE id = ?
                 """, (int(id_selecionado),))
-                novo_id = cursor.lastrowid
-                conn.commit()
                 conn.close()
-                registrar_log("DUPLICAR_LANCAMENTO", f"id_origem={int(id_selecionado)} -> id_novo={int(novo_id)}")
                 st.success(f"✅ Lançamento duplicado com sucesso! Novo ID: {novo_id}")
                 st.rerun()
 
@@ -429,11 +416,9 @@ else:
         with a4:
             if st.session_state.get("confirmar_exclusao_id") == int(id_selecionado):
                 if st.button("Confirmar Exclusão", type="secondary", use_container_width=True):
-                    conn = conectar()
-                    conn.execute("DELETE FROM transactions WHERE id = ?", (int(id_selecionado),))
-                    conn.commit()
+                    conn, engine = conectar()
+                    executar_sql(conn, engine, "DELETE FROM transactions WHERE id = ?", (int(id_selecionado),))
                     conn.close()
-                    registrar_log("EXCLUIR_LANCAMENTO", f"id_excluido={int(id_selecionado)}")
                     st.session_state.pop("confirmar_exclusao_id", None)
                     st.success("✅ Lançamento apagado permanentemente!")
                     st.rerun()
