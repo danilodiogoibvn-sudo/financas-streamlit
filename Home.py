@@ -2,26 +2,56 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import date
+import base64                                  # <-- Import novo pro iPhone
+import streamlit.components.v1 as components   # <-- Import novo pro iPhone
 
 from database import inicializar_banco, conectar_banco
-from auth import checar_senha, fazer_logout  # se seu arquivo for auth.py minúsculo, troque aqui
+from auth import checar_senha, fazer_logout  
 
 # --- IMPORTANDO SEUS NOVOS MÓDULOS D.TECH ---
 from style import carregar_estilos
 from components import metric_card, icon_svg
 
-# 1) Configuração
+# ==========================================
+# 1) CONFIGURAÇÃO DA PÁGINA
+# ==========================================
 st.set_page_config(
-    page_title="Contas a Pagar | D.Tech", 
-    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
+    page_title="Painel Executivo | D.Tech", 
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+# ==========================================
+# 2) TRUQUE MÁGICO DO IPHONE (Apple Touch Icon)
+# ==========================================
+try:
+    with open("logo.png", "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+        
+    components.html(
+        f"""
+        <script>
+            var link = window.parent.document.createElement('link');
+            link.rel = 'apple-touch-icon';
+            link.href = 'data:image/png;base64,{img_b64}';
+            window.parent.document.head.appendChild(link);
+        </script>
+        """,
+        height=0, width=0
+    )
+except:
+    pass
+
+# ==========================================
+# 3) LOGO DO MENU LATERAL
+# ==========================================
 try:
     st.logo("logo.png")
 except:
     pass
+
+# ... (O restante do seu código da Home continua daqui pra baixo normalmente!) ...
 
 # Aplica toda a identidade visual de uma vez só!
 carregar_estilos()
