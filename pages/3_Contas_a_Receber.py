@@ -47,10 +47,21 @@ exigir_login()
 st.title("Contas a Receber")
 st.markdown("<span style='color: #A0AEC0;'>Acompanhe previsões de recebimento e pagamentos confirmados.</span>", unsafe_allow_html=True)
 
+from database import conectar_banco
+
 def conectar():
-    if "db_nome" not in st.session_state:
-        st.session_state["db_nome"] = "financeiro.db"
-    return sqlite3.connect(st.session_state["db_nome"])
+    db_nome = st.session_state.get("db_nome", "financas.db")
+    conn, engine = conectar_banco(db_nome)
+    return conn, engine
+
+def executar_sql(conn, engine, query, params=()):
+    if engine == "postgres" and params:
+        query = query.replace("?", "%s")
+    cur = conn.cursor()
+    cur.execute(query, params)
+    conn.commit()
+    try: return cur.lastrowid
+    except: return 0
 
 # -----------------------------
 # Helpers
