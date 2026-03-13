@@ -9,7 +9,13 @@ from components import metric_card, icon_svg
 from auth import exigir_login
 from database import conectar_banco
 
-st.set_page_config(page_title="Fluxo de Caixa", page_icon="📊", layout="wide")
+# 1) Configuração
+st.set_page_config(
+    page_title="Contas a Pagar | D.Tech", 
+    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 try:
     st.logo("logo.png")
