@@ -3,10 +3,10 @@ import sqlite3
 import pandas as pd
 from datetime import date, timedelta
 
-# --- IMPORTANDO SEUS NOVOS MÓDULOS D.TECH ---
 from style import carregar_estilos
 from components import metric_card, icon_svg
 from auth import exigir_login
+from database import conectar_banco
 
 st.set_page_config(page_title="Contas a Receber", page_icon="📊", layout="wide")
 
@@ -15,10 +15,8 @@ try:
 except:
     pass
 
-# Aplica a identidade visual global D.Tech
 carregar_estilos()
 
-# Estilo específico para a Tabela Detalhada (SaaS)
 st.markdown("""
 <style>
 .dt-table table { width:100%; border-collapse:separate; border-spacing:0; overflow:hidden; border-radius:14px; }
@@ -26,15 +24,11 @@ st.markdown("""
     text-align:center !important;
     font-weight:800;
     padding:12px 12px;
-    border-bottom:1px solid rgba(0, 209, 255, 0.3); /* Linha Ciano */
-    background:rgba(0, 209, 255, 0.05); /* Fundo Ciano suave */
+    border-bottom:1px solid rgba(0, 209, 255, 0.3);
+    background:rgba(0, 209, 255, 0.05);
     color: #00D1FF;
 }
-.dt-table tbody td {
-    padding:12px 12px;
-    border-bottom:1px solid rgba(255,255,255,0.05);
-    vertical-align:middle;
-}
+.dt-table tbody td { padding:12px 12px; border-bottom:1px solid rgba(255,255,255,0.05); vertical-align:middle; }
 .dt-table tbody tr:hover td { background:rgba(255,255,255,0.02); }
 .dt-table tbody td:nth-child(1) { text-align:left; }
 .dt-table tbody td:nth-child(2) { text-align:center; }
@@ -47,10 +41,11 @@ exigir_login()
 st.title("Contas a Receber")
 st.markdown("<span style='color: #A0AEC0;'>Acompanhe previsões de recebimento e pagamentos confirmados.</span>", unsafe_allow_html=True)
 
-from database import conectar_banco
-
+# ==========================================
+# BANCO DE DADOS HÍBRIDO
+# ==========================================
 def conectar():
-    db_nome = st.session_state.get("db_nome", "financas.db")
+    db_nome = st.session_state.get("db_nome", "financeiro.db")
     conn, engine = conectar_banco(db_nome)
     return conn, engine
 
@@ -73,46 +68,30 @@ MESES_PT = {
 NOME_PARA_NUMERO = {v: k for k, v in MESES_PT.items()}
 
 def fmt_brl(x: float) -> str:
-    try:
-        return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
-        return "R$ 0,00"
+    try: return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except: return "R$ 0,00"
 
 def limpar_txt(x: str) -> str:
-    try:
-        return str(x).replace("\n", " ").strip()
-    except:
-        return ""
+    try: return str(x).replace("\n", " ").strip()
+    except: return ""
 
 def badge_status_minimal_receber(status: str) -> str:
     s = limpar_txt(status)
     if s == "Recebido":
-        cor_bg = "rgba(0,204,150,0.12)"
-        cor_tx = "#00CC96"
-        icon = icon_svg("check")
-        texto = "Realizado"
+        cor_bg, cor_tx, icon, texto = "rgba(0,204,150,0.12)", "#00CC96", icon_svg("check"), "Realizado"
     elif s == "Atrasado":
-        cor_bg = "rgba(255,75,75,0.12)"
-        cor_tx = "#FF4B4B"
-        icon = icon_svg("alert")
-        texto = "Atrasado"
+        cor_bg, cor_tx, icon, texto = "rgba(255,75,75,0.12)", "#FF4B4B", icon_svg("alert"), "Atrasado"
     elif s == "Recebe em 7 dias":
-        cor_bg = "rgba(249,199,79,0.12)"
-        cor_tx = "#F9C74F"
-        icon = icon_svg("calendar")
-        texto = "Recebe em 7 dias"
+        cor_bg, cor_tx, icon, texto = "rgba(249,199,79,0.12)", "#F9C74F", icon_svg("calendar"), "Recebe em 7 dias"
     else:
-        cor_bg = "rgba(249,199,79,0.12)"
-        cor_tx = "#F9C74F"
-        icon = icon_svg("clock")
-        texto = "A receber"
+        cor_bg, cor_tx, icon, texto = "rgba(249,199,79,0.12)", "#F9C74F", icon_svg("clock"), "A receber"
 
     return f"""<span style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:{cor_tx}; background:{cor_bg}; border:1px solid rgba(255,255,255,0.08); white-space:nowrap;"><span style="display:inline-flex; color:{cor_tx};">{icon}</span>{texto}</span>"""
 
 # -----------------------------
 # Dados
 # -----------------------------
-conn = conectar()
+conn, engine = conectar()
 df = pd.read_sql_query("""
     SELECT t.id, t.descricao as Cliente_Descricao, c.nome as Categoria, t.data_prevista as Previsao_Recebimento, t.valor as Valor, t.status as Status_BD
     FROM transactions t
@@ -137,14 +116,10 @@ hoje = date.today()
 em_7 = hoje + timedelta(days=7)
 
 def definir_status(row):
-    if row["Status_BD"] == "Realizado":
-        return "Recebido"
-    if row["Previsao_Recebimento"] is None:
-        return "A receber"
-    if row["Previsao_Recebimento"] < hoje:
-        return "Atrasado"
-    if hoje <= row["Previsao_Recebimento"] <= em_7:
-        return "Recebe em 7 dias"
+    if row["Status_BD"] == "Realizado": return "Recebido"
+    if row["Previsao_Recebimento"] is None: return "A receber"
+    if row["Previsao_Recebimento"] < hoje: return "Atrasado"
+    if hoje <= row["Previsao_Recebimento"] <= em_7: return "Recebe em 7 dias"
     return "A receber"
 
 df["Status"] = df.apply(definir_status, axis=1)
@@ -160,31 +135,24 @@ meses_nomes = list(MESES_PT.values())
 mes_atual_nome = MESES_PT[mes_atual]
 
 f1, f2, f3 = st.columns([1.1, 1.6, 2.2])
-with f1:
-    ano_sel = st.selectbox("Ano", options=anos, index=anos.index(ano_atual))
+with f1: ano_sel = st.selectbox("Ano", options=anos, index=anos.index(ano_atual))
 with f2:
     mes_nome = st.selectbox("Mês", options=meses_nomes, index=meses_nomes.index(mes_atual_nome))
     mes_sel = NOME_PARA_NUMERO[mes_nome]
-with f3:
-    busca = st.text_input("Buscar cliente/descrição", placeholder="Ex: venda, pix, cartão...")
+with f3: busca = st.text_input("Buscar cliente/descrição", placeholder="Ex: venda, pix, cartão...")
 
 f4, f5, f6 = st.columns([1.6, 1.6, 1.2])
-with f4:
-    status_filtro = st.multiselect("Status", options=["Atrasado", "Recebe em 7 dias", "A receber", "Recebido"], default=["Atrasado", "Recebe em 7 dias", "A receber"])
+with f4: status_filtro = st.multiselect("Status", options=["Atrasado", "Recebe em 7 dias", "A receber", "Recebido"], default=["Atrasado", "Recebe em 7 dias", "A receber"])
 with f5:
     cats = sorted([c for c in df["Categoria"].dropna().unique().tolist()])
     categoria_sel = st.multiselect("Categoria", options=cats, default=[])
-with f6:
-    ordenar = st.selectbox("Ordenar", options=["Previsão (mais próximo)", "Valor (maior)", "Valor (menor)"])
+with f6: ordenar = st.selectbox("Ordenar", options=["Previsão (mais próximo)", "Valor (maior)", "Valor (menor)"])
 
 df_f = df[(df["Prev_dt"].dt.year == int(ano_sel)) & (df["Prev_dt"].dt.month == int(mes_sel))].copy()
 
-if status_filtro:
-    df_f = df_f[df_f["Status"].isin(status_filtro)]
-if categoria_sel:
-    df_f = df_f[df_f["Categoria"].isin(categoria_sel)]
-if busca.strip():
-    df_f = df_f[df_f["Cliente_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
+if status_filtro: df_f = df_f[df_f["Status"].isin(status_filtro)]
+if categoria_sel: df_f = df_f[df_f["Categoria"].isin(categoria_sel)]
+if busca.strip(): df_f = df_f[df_f["Cliente_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
 
 if not df_f.empty:
     vmin, vmax = float(df_f["Valor"].min()), float(df_f["Valor"].max())
@@ -194,12 +162,9 @@ if not df_f.empty:
     else:
         st.info(f"Faixa de valor: apenas um valor → {fmt_brl(vmin)}")
 
-if ordenar == "Valor (maior)":
-    df_f = df_f.sort_values("Valor", ascending=False)
-elif ordenar == "Valor (menor)":
-    df_f = df_f.sort_values("Valor", ascending=True)
-else:
-    df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
+if ordenar == "Valor (maior)": df_f = df_f.sort_values("Valor", ascending=False)
+elif ordenar == "Valor (menor)": df_f = df_f.sort_values("Valor", ascending=True)
+else: df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
 
 # -----------------------------
 # Resumo
@@ -213,14 +178,10 @@ total_recebido = df_f[df_f["Status"] == "Recebido"]["Valor"].sum()
 qtd_7 = df_f[df_f["Status"] == "Recebe em 7 dias"].shape[0]
 
 m1, m2, m3, m4 = st.columns(4)
-with m1:
-    metric_card("Total a receber", fmt_brl(total_receber), "Previsto para entrar", "green", icon_svg("calendar"))
-with m2:
-    metric_card("Atrasado", fmt_brl(total_atrasado), "Tudo em dia!" if total_atrasado == 0 else "Cobrar clientes / repasse", "green" if total_atrasado == 0 else "red", icon_svg("alert"))
-with m3:
-    metric_card("Recebido", fmt_brl(total_recebido), "Visão do período filtrado", "green", icon_svg("check"))
-with m4:
-    metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qtd_7 == 0 else "red", icon_svg("calendar"))
+with m1: metric_card("Total a receber", fmt_brl(total_receber), "Previsto para entrar", "green", icon_svg("calendar"))
+with m2: metric_card("Atrasado", fmt_brl(total_atrasado), "Tudo em dia!" if total_atrasado == 0 else "Cobrar clientes / repasse", "green" if total_atrasado == 0 else "red", icon_svg("alert"))
+with m3: metric_card("Recebido", fmt_brl(total_recebido), "Visão do período filtrado", "green", icon_svg("check"))
+with m4: metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qtd_7 == 0 else "red", icon_svg("calendar"))
 
 # -----------------------------
 # Ação rápida
@@ -249,17 +210,16 @@ else:
     if st.session_state.get("confirmar_recebido_id") == id_sel:
         st.warning("Confirme: isso marcará como Realizado.")
         if st.button("Confirmar recebimento", use_container_width=True):
-            conn = conectar()
-            cur = conn.cursor()
+            conn, engine = conectar()
             try:
-                cur.execute("UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
-            except:
-                cur.execute("UPDATE transactions SET status='Realizado' WHERE id=?", (id_sel,))
-            conn.commit()
-            conn.close()
-            st.session_state.pop("confirmar_recebido_id", None)
-            st.success("Recebimento confirmado.")
-            st.rerun()
+                executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
+                st.success("Recebimento confirmado.")
+                st.session_state.pop("confirmar_recebido_id", None)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro: {e}")
+            finally:
+                conn.close()
 
 # -----------------------------
 # Tabela Detalhada
