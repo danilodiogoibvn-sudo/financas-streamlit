@@ -1,36 +1,67 @@
 import sqlite3
 import os
+import streamlit as st
+
+class CachedConnection:
+    """
+    Um 'disfarce' para a conexão que impede o sistema de fechá-la.
+    Isso engana o conn.close() das outras páginas para manter a conexão viva no cache.
+    """
+    def __init__(self, conn):
+        self._conn = conn
+        
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+        
+    def commit(self):
+        self._conn.commit()
+        
+    def rollback(self):
+        self._conn.rollback()
+        
+    def close(self):
+        pass # A MÁGICA ACONTECE AQUI! Ignora o fechamento para manter o cache voando.
+        
+    def __getattr__(self, name):
+        # Repassa qualquer outra chamada do Pandas direto para a conexão original
+        return getattr(self._conn, name)
 
 def eh_postgres(db_ref: str) -> bool:
     return isinstance(db_ref, str) and (
         db_ref.startswith("postgresql://") or db_ref.startswith("postgres://")
     )
 
-def conectar_banco(nome_db):
-    """
-    Retorna (conn, engine)
-    engine = 'postgres' | 'sqlite'
-    """
+# 🚀 O PODER DO STREAMLIT: Guarda a conexão na memória do servidor!
+@st.cache_resource(show_spinner=False)
+def _get_conexao_persistente(nome_db):
     if eh_postgres(nome_db):
         import psycopg2
         conn = psycopg2.connect(nome_db, sslmode="require")
         return conn, "postgres"
 
-    # garante pasta local se vier só nome de arquivo
+    # Garante pasta local se vier só nome de arquivo (para SQLite)
     if nome_db and not os.path.isabs(nome_db):
         pasta = os.path.dirname(nome_db)
         if pasta:
             os.makedirs(pasta, exist_ok=True)
 
-    conn = sqlite3.connect(nome_db)
+    # check_same_thread=False é obrigatório para usar SQLite com cache no Streamlit
+    conn = sqlite3.connect(nome_db, check_same_thread=False)
     return conn, "sqlite"
+
+
+def conectar_banco(nome_db):
+    """
+    Retorna (conn, engine)
+    conn é envelopado na nossa classe mágica para não fechar nunca.
+    """
+    conn_real, engine = _get_conexao_persistente(nome_db)
+    return CachedConnection(conn_real), engine
 
 
 def inicializar_banco(nome_db):
     """
-    Compatível com:
-    - SQLite (local): nome_db = "financas.db" ou "data/financas.db"
-    - Postgres/Neon (cloud): nome_db = "postgresql://..."
+    Cria as tabelas se elas não existirem.
     """
     conn, engine = conectar_banco(nome_db)
     cursor = conn.cursor()
@@ -102,4 +133,5 @@ def inicializar_banco(nome_db):
         """)
 
     conn.commit()
+    # Aqui o conn.close() vai ser chamado, mas o nosso disfarce vai ignorar lindamente!
     conn.close()
