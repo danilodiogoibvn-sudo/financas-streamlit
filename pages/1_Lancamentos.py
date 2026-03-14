@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 import re
 import calendar
 
@@ -18,7 +18,7 @@ from database import conectar_banco
 # 1) CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="Sistema Financeiro | D.Tech", # Troque o título dependendo da página
+    page_title="Lançamentos | D.Tech", 
     page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -91,7 +91,6 @@ def conectar():
     return conn, engine
 
 def executar_sql(conn, engine, query, params=()):
-    # Se for Postgres, troca os "?" do SQLite por "%s" para não dar erro
     if engine == "postgres" and params:
         query = query.replace("?", "%s")
     
@@ -104,8 +103,16 @@ def executar_sql(conn, engine, query, params=()):
         return 0
 
 # -----------------------------
-# Helpers
+# Helpers de Fuso Horário e Formatação
 # -----------------------------
+def obter_hoje_br():
+    fuso_br = timezone(timedelta(hours=-3))
+    return datetime.now(fuso_br).date()
+
+def obter_agora_br():
+    fuso_br = timezone(timedelta(hours=-3))
+    return datetime.now(fuso_br).strftime("%Y-%m-%d %H:%M:%S")
+
 MESES_PT = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
     7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
@@ -205,7 +212,7 @@ def registrar_log(acao: str, detalhes: str):
     try:
         conn, engine = conectar()
         usuario = st.session_state.get("usuario_atual", "desconhecido")
-        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        agora = obter_agora_br() # Usando hora do Brasil
         executar_sql(conn, engine, "INSERT INTO audit_log (data_hora, usuario, acao, detalhes) VALUES (?, ?, ?, ?)", (agora, usuario, acao, detalhes))
         conn.close()
     except:
@@ -231,7 +238,7 @@ else:
             descricao = st.text_input("Descrição", placeholder="Ex: Pagamento Fornecedor X, Venda Y")
             valor = st.number_input("Valor (R$)", min_value=0.01, step=10.00, format="%.2f")
 
-            data_prevista = seletor_data_ptbr("novo", "Data Prevista / Vencimento", default=date.today())
+            data_prevista = seletor_data_ptbr("novo", "Data Prevista / Vencimento", default=obter_hoje_br())
 
             dict_contas = dict(zip(df_contas["nome"], df_contas["id"]))
             dict_categorias = dict(zip(df_categorias["nome"] + " (" + df_categorias["tipo"] + ")", df_categorias["id"]))
@@ -263,7 +270,7 @@ else:
     with col_table:
         st.subheader("Últimos Lançamentos")
 
-        hoje = date.today()
+        hoje = obter_hoje_br()
         ano_atual = hoje.year
         mes_atual = hoje.month
 
@@ -290,8 +297,9 @@ else:
             conta_sel = st.selectbox("Conta", options=["Todas"] + sorted(df_contas["nome"].unique().tolist()))
 
         conn, engine = conectar()
+        # 🚀 CORREÇÃO AQUI: Sem "as Nome" para não confundir o Pandas!
         query = """
-            SELECT t.id as ID, t.status as Status, t.data_prevista as Data, t.tipo as Tipo, t.descricao as Descrição, c.nome as Categoria, a.nome as Conta, t.valor as Valor
+            SELECT t.id, t.status, t.data_prevista, t.tipo, t.descricao, c.nome, a.nome, t.valor
             FROM transactions t
             LEFT JOIN categories c ON t.categoria_id = c.id
             LEFT JOIN accounts a ON t.conta_id = a.id
@@ -301,6 +309,9 @@ else:
         conn.close()
 
         if not df_transacoes.empty:
+            # 🚀 CORREÇÃO AQUI: Forçando as colunas exatas
+            df_transacoes.columns = ["ID", "Status", "Data", "Tipo", "Descrição", "Categoria", "Conta", "Valor"]
+            
             df_transacoes["Status"] = df_transacoes["Status"].apply(limpar_txt)
             df_transacoes["Data_dt"] = pd.to_datetime(df_transacoes["Data"], errors="coerce")
             df_transacoes["Valor_num"] = pd.to_numeric(df_transacoes["Valor"], errors="coerce").fillna(0.0)
@@ -367,7 +378,7 @@ else:
 
     conn, engine = conectar()
     df_raw = pd.read_sql_query("""
-        SELECT t.id, t.tipo, t.descricao, t.valor, t.data_prevista, t.status, a.nome as conta_nome, c.nome as categoria_nome, t.conta_id, t.categoria_id
+        SELECT t.id, t.tipo, t.descricao, t.valor, t.data_prevista, t.status, a.nome, c.nome, t.conta_id, t.categoria_id
         FROM transactions t
         LEFT JOIN accounts a ON t.conta_id = a.id
         LEFT JOIN categories c ON t.categoria_id = c.id
@@ -376,6 +387,9 @@ else:
     conn.close()
 
     if not df_raw.empty:
+        # 🚀 CORREÇÃO AQUI também para a tabela debaixo!
+        df_raw.columns = ["id", "tipo", "descricao", "valor", "data_prevista", "status", "conta_nome", "categoria_nome", "conta_id", "categoria_id"]
+        
         df_raw["valor_num"] = pd.to_numeric(df_raw.get("valor", 0), errors="coerce").fillna(0.0)
         df_raw["valor_fmt"] = df_raw["valor_num"].apply(fmt_brl)
         df_raw["data_fmt"] = pd.to_datetime(df_raw.get("data_prevista", None), errors="coerce").dt.strftime("%d/%m/%Y").fillna("—")
@@ -399,7 +413,7 @@ else:
 
         with cE2:
             data_default = pd.to_datetime(linha["data_prevista"], errors="coerce")
-            data_default = date.today() if pd.isna(data_default) else data_default.date()
+            data_default = obter_hoje_br() if pd.isna(data_default) else data_default.date()
             data_edit = seletor_data_ptbr("edit", "Data Prevista / Vencimento (Editar)", default=data_default)
             status_edit = st.selectbox("Status", options=["Previsto", "Realizado"], index=0 if linha["status"] == "Previsto" else 1)
 
