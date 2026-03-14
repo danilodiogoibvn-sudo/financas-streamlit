@@ -69,12 +69,12 @@ def conectar_admin():
         if not cursor.fetchone():
             cursor.execute(
                 "INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo) VALUES (%s, %s, %s, %s, %s)",
-                ("danilo", "09011998Dan*", db_url, "D.Tec - Danilo Diogo", 1),
+                ("danilo", "09011998Dan*", db_url, "D.Tech - Danilo Diogo", 1),
             )
             conn.commit()
             
         # --- ATUALIZAÇÃO FORÇADA DA EMPRESA (Sem apagar o banco) ---
-        cursor.execute("UPDATE usuarios SET empresa = %s WHERE usuario = %s", ("D.Tec - Danilo Diogo", "danilo"))
+        cursor.execute("UPDATE usuarios SET empresa = %s WHERE usuario = %s", ("D.Tech - Danilo Diogo", "danilo"))
         conn.commit()
         # -----------------------------------------------------------
 
@@ -102,12 +102,12 @@ def conectar_admin():
     if not cursor.fetchone():
         cursor.execute(
             "INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo) VALUES (?, ?, ?, ?, ?)",
-            ("danilo", "09011998Dan*", "dominio.db", "D.Tec - Danilo Diogo", 1),
+            ("danilo", "09011998Dan*", "dominio.db", "D.Tech - Danilo Diogo", 1),
         )
         conn.commit()
         
     # --- ATUALIZAÇÃO FORÇADA DA EMPRESA (Sem apagar o banco) ---
-    cursor.execute("UPDATE usuarios SET empresa = ? WHERE usuario = ?", ("D.Tec - Danilo Diogo", "danilo"))
+    cursor.execute("UPDATE usuarios SET empresa = ? WHERE usuario = ?", ("D.Tech - Danilo Diogo", "danilo"))
     conn.commit()
     # -----------------------------------------------------------
 
