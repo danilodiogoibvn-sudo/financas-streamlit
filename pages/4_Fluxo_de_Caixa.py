@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import plotly.express as px
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 from style import carregar_estilos
 from components import metric_card, icon_svg
@@ -11,8 +11,8 @@ from database import conectar_banco
 
 # 1) Configuração
 st.set_page_config(
-    page_title="Contas a Pagar | D.Tech", 
-    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
+    page_title="Fluxo de Caixa | D.Tech", 
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -44,12 +44,18 @@ def fmt_brl(x: float) -> str:
     try: return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except: return "R$ 0,00"
 
+# 🚀 NOVA FUNÇÃO: Forçar o Fuso Horário do Brasil (Brasília UTC-3)
+def obter_hoje_br():
+    fuso_br = timezone(timedelta(hours=-3))
+    return datetime.now(fuso_br).date()
+
 # -----------------------------
 # Período
 # -----------------------------
 st.subheader("Período")
 
-hoje = date.today()
+# Agora o sistema sempre vai saber o dia correto no Brasil!
+hoje = obter_hoje_br()
 primeiro_dia_mes = hoje.replace(day=1)
 ultimo_dia_mes = (primeiro_dia_mes + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
@@ -65,8 +71,9 @@ else: data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
 
 with cC:
     d1, d2 = st.columns(2)
-    with d1: data_inicio = st.date_input("Data inicial", value=data_inicio_padrao, disabled=(preset != "Personalizado"))
-    with d2: data_fim = st.date_input("Data final", value=data_fim_padrao, disabled=(preset != "Personalizado"))
+    # 🚀 ADICIONADO: format="DD/MM/YYYY" para ficar no padrão brasileiro visualmente
+    with d1: data_inicio = st.date_input("Data inicial", value=data_inicio_padrao, disabled=(preset != "Personalizado"), format="DD/MM/YYYY")
+    with d2: data_fim = st.date_input("Data final", value=data_fim_padrao, disabled=(preset != "Personalizado"), format="DD/MM/YYYY")
 
 if data_fim < data_inicio:
     data_inicio, data_fim = data_fim, data_inicio
