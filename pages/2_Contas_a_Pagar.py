@@ -8,7 +8,7 @@ from components import metric_card, icon_svg
 from auth import exigir_login
 from database import conectar_banco
 
-st.set_page_config(page_title="Contas a Receber | D.Tech", page_icon="logo.png", layout="wide")
+st.set_page_config(page_title="Contas a Pagar", page_icon="📊", layout="wide")
 
 try:
     st.logo("logo.png")
@@ -28,7 +28,11 @@ st.markdown("""
     background:rgba(0, 209, 255, 0.05);
     color: #00D1FF;
 }
-.dt-table tbody td { padding:12px 12px; border-bottom:1px solid rgba(255,255,255,0.05); vertical-align:middle; }
+.dt-table tbody td {
+    padding:12px 12px;
+    border-bottom:1px solid rgba(255,255,255,0.05);
+    vertical-align:middle;
+}
 .dt-table tbody tr:hover td { background:rgba(255,255,255,0.02); }
 .dt-table tbody td:nth-child(1) { text-align:left; }
 .dt-table tbody td:nth-child(2) { text-align:center; }
@@ -38,14 +42,14 @@ st.markdown("""
 
 exigir_login()
 
-st.title("Contas a Receber")
-st.markdown("<span style='color: #A0AEC0;'>Acompanhe previsões de recebimento e pagamentos confirmados.</span>", unsafe_allow_html=True)
+st.title("Contas a Pagar")
+st.markdown("<span style='color: #A0AEC0;'>Acompanhe compromissos, fornecedores e evite atrasos.</span>", unsafe_allow_html=True)
 
 # ==========================================
 # BANCO DE DADOS HÍBRIDO
 # ==========================================
 def conectar():
-    db_nome = st.session_state.get("db_nome", "financeiro.db")
+    db_nome = st.session_state.get("db_nome", "financeiro.db") 
     conn, engine = conectar_banco(db_nome)
     return conn, engine
 
@@ -62,8 +66,8 @@ def executar_sql(conn, engine, query, params=()):
 # Helpers
 # -----------------------------
 MESES_PT = {
-    1:"Janeiro", 2:"Fevereiro", 3:"Março", 4:"Abril", 5:"Maio", 6:"Junho",
-    7:"Julho", 8:"Agosto", 9:"Setembro", 10:"Outubro", 11:"Novembro", 12:"Dezembro"
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+    7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"
 }
 NOME_PARA_NUMERO = {v: k for k, v in MESES_PT.items()}
 
@@ -75,16 +79,15 @@ def limpar_txt(x: str) -> str:
     try: return str(x).replace("\n", " ").strip()
     except: return ""
 
-def badge_status_minimal_receber(status: str) -> str:
-    s = limpar_txt(status)
-    if s == "Recebido":
-        cor_bg, cor_tx, icon, texto = "rgba(0,204,150,0.12)", "#00CC96", icon_svg("check"), "Realizado"
-    elif s == "Atrasado":
+def badge_status_minimal(status: str, atrasado: bool) -> str:
+    status = limpar_txt(status)
+
+    if atrasado:
         cor_bg, cor_tx, icon, texto = "rgba(255,75,75,0.12)", "#FF4B4B", icon_svg("alert"), "Atrasado"
-    elif s == "Recebe em 7 dias":
-        cor_bg, cor_tx, icon, texto = "rgba(249,199,79,0.12)", "#F9C74F", icon_svg("calendar"), "Recebe em 7 dias"
+    elif status == "Realizado":
+        cor_bg, cor_tx, icon, texto = "rgba(0,204,150,0.12)", "#00CC96", icon_svg("check"), "Realizado"
     else:
-        cor_bg, cor_tx, icon, texto = "rgba(249,199,79,0.12)", "#F9C74F", icon_svg("clock"), "A receber"
+        cor_bg, cor_tx, icon, texto = "rgba(249,199,79,0.12)", "#F9C74F", icon_svg("clock"), "Previsto"
 
     return f"""<span style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; color:{cor_tx}; background:{cor_bg}; border:1px solid rgba(255,255,255,0.08); white-space:nowrap;"><span style="display:inline-flex; color:{cor_tx};">{icon}</span>{texto}</span>"""
 
@@ -97,43 +100,43 @@ try:
         SELECT t.id, t.descricao, c.nome, t.data_prevista, t.valor, t.status
         FROM transactions t
         LEFT JOIN categories c ON t.categoria_id = c.id
-        WHERE t.tipo = 'Entrada'
+        WHERE t.tipo = 'Saída'
         ORDER BY t.data_prevista ASC
     """, conn)
     conn.close()
     
-    # Blindando os nomes das colunas contra o banco na nuvem
-    df.columns = ["id", "Cliente_Descricao", "Categoria", "Previsao_Recebimento", "Valor", "Status_BD"]
-
+    # Blindando os nomes das colunas
+    df.columns = ["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"]
+    
 except Exception as e:
     st.error(f"Erro ao conectar banco: {e}")
     st.stop()
 
 if df.empty:
-    st.info("Nenhuma receita registrada ainda. Cadastre em 'Lançamentos'.")
-    df = pd.DataFrame(columns=["id", "Cliente_Descricao", "Categoria", "Previsao_Recebimento", "Valor", "Status_BD"])
+    st.info("Nenhuma despesa registrada ainda.")
+    df = pd.DataFrame(columns=["id", "Fornecedor_Descricao", "Categoria", "Vencimento", "Valor", "Status_BD"])
 
-for col in ["Cliente_Descricao", "Categoria", "Status_BD"]:
+for col in ["Fornecedor_Descricao", "Categoria", "Status_BD"]:
     if col in df.columns:
         df[col] = df[col].astype(str).str.replace("\n", " ", regex=False).str.strip()
 
-df["Previsao_Recebimento"] = pd.to_datetime(df["Previsao_Recebimento"], errors="coerce").dt.date
-df["Prev_dt"] = pd.to_datetime(df["Previsao_Recebimento"], errors="coerce")
+df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce").dt.date
+df["Venc_dt"] = pd.to_datetime(df["Vencimento"], errors="coerce")
 
 hoje = date.today()
 em_7 = hoje + timedelta(days=7)
 
-def definir_status(row):
-    if row["Status_BD"] == "Realizado": return "Recebido"
-    if row["Previsao_Recebimento"] is None: return "A receber"
-    if row["Previsao_Recebimento"] < hoje: return "Atrasado"
-    if hoje <= row["Previsao_Recebimento"] <= em_7: return "Recebe em 7 dias"
-    return "A receber"
+def definir_status_label(row):
+    if str(row["Status_BD"]) == "Realizado": return "Realizado"
+    if row["Vencimento"] is None: return "A pagar"
+    if row["Vencimento"] < hoje: return "Atrasado"
+    if hoje <= row["Vencimento"] <= em_7: return "Recebe em 7 dias"
+    return "A pagar"
 
 if not df.empty:
-    df["Status"] = df.apply(definir_status, axis=1)
+    df["Status_Label"] = df.apply(definir_status_label, axis=1)
 else:
-    df["Status"] = []
+    df["Status_Label"] = []
 
 # -----------------------------
 # Filtros
@@ -142,42 +145,36 @@ st.subheader("Filtros")
 
 ano_atual, mes_atual = hoje.year, hoje.month
 anos = list(range(ano_atual - 3, ano_atual + 2))
-meses_nomes = list(MESES_PT.values())
-mes_atual_nome = MESES_PT[mes_atual]
+lista_meses_nomes = list(MESES_PT.values())
+nome_mes_atual = MESES_PT[mes_atual]
 
-f1, f2, f3 = st.columns([1.1, 1.6, 2.2])
+f1, f2, f3 = st.columns([1.1, 1.8, 2.2])
 with f1: ano_sel = st.selectbox("Ano", options=anos, index=anos.index(ano_atual))
 with f2:
-    mes_nome = st.selectbox("Mês", options=meses_nomes, index=meses_nomes.index(mes_atual_nome))
-    mes_sel = NOME_PARA_NUMERO[mes_nome]
-with f3: busca = st.text_input("Buscar cliente/descrição", placeholder="Ex: venda, pix, cartão...")
+    mes_selecionado_nome = st.selectbox("Mês", options=lista_meses_nomes, index=lista_meses_nomes.index(nome_mes_atual))
+    mes_sel = NOME_PARA_NUMERO[mes_selecionado_nome]
+with f3: busca = st.text_input("Buscar fornecedor/descrição", placeholder="Ex: aluguel, internet...")
 
 f4, f5, f6 = st.columns([1.6, 1.6, 1.2])
-with f4: status_filtro = st.multiselect("Status", options=["Atrasado", "Recebe em 7 dias", "A receber", "Recebido"], default=["Atrasado", "Recebe em 7 dias", "A receber"])
+STATUS_OPCOES = ["Atrasado", "Recebe em 7 dias", "A pagar", "Realizado"]
+
+with f4: status_filtro = st.multiselect("Status", options=STATUS_OPCOES)
 with f5:
     cats = sorted([c for c in df["Categoria"].dropna().unique().tolist()]) if not df.empty else []
-    categoria_sel = st.multiselect("Categoria", options=cats, default=[])
-with f6: ordenar = st.selectbox("Ordenar", options=["Previsão (mais próximo)", "Valor (maior)", "Valor (menor)"])
+    categoria_sel = st.multiselect("Categoria", options=cats)
+with f6: ordenar = st.selectbox("Ordenar", options=["Vencimento (próximo)", "Valor (maior)", "Valor (menor)"])
 
 df_f = pd.DataFrame()
 if not df.empty:
-    df_f = df[(df["Prev_dt"].dt.year == int(ano_sel)) & (df["Prev_dt"].dt.month == int(mes_sel))].copy()
+    df_f = df[(df["Venc_dt"].dt.year == int(ano_sel)) & (df["Venc_dt"].dt.month == int(mes_sel))].copy()
 
-    if status_filtro: df_f = df_f[df_f["Status"].isin(status_filtro)]
+    if status_filtro: df_f = df_f[df_f["Status_Label"].isin(status_filtro)]
     if categoria_sel: df_f = df_f[df_f["Categoria"].isin(categoria_sel)]
-    if busca.strip(): df_f = df_f[df_f["Cliente_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
-
-    if not df_f.empty:
-        vmin, vmax = float(df_f["Valor"].min()), float(df_f["Valor"].max())
-        if vmin < vmax:
-            faixa = st.slider("Faixa de valor (R$)", min_value=vmin, max_value=vmax, value=(vmin, vmax))
-            df_f = df_f[(df_f["Valor"] >= faixa[0]) & (df_f["Valor"] <= faixa[1])]
-        else:
-            st.info(f"Faixa de valor: apenas um valor → {fmt_brl(vmin)}")
+    if busca.strip(): df_f = df_f[df_f["Fornecedor_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
 
     if ordenar == "Valor (maior)": df_f = df_f.sort_values("Valor", ascending=False)
     elif ordenar == "Valor (menor)": df_f = df_f.sort_values("Valor", ascending=True)
-    else: df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
+    else: df_f = df_f.sort_values("Vencimento", ascending=True)
 
 # -----------------------------
 # Resumo
@@ -188,19 +185,19 @@ st.subheader("Resumo")
 if df_f.empty:
     st.info("Nenhum dado encontrado para este período.")
 else:
-    total_receber = df_f[df_f["Status"].isin(["A receber", "Recebe em 7 dias"])]["Valor"].sum()
-    total_atrasado = df_f[df_f["Status"] == "Atrasado"]["Valor"].sum()
-    total_recebido = df_f[df_f["Status"] == "Recebido"]["Valor"].sum()
-    qtd_7 = df_f[df_f["Status"] == "Recebe em 7 dias"].shape[0]
+    total_aberto = df_f[df_f["Status_Label"].isin(["A pagar", "Recebe em 7 dias"])]["Valor"].sum()
+    total_atrasado = df_f[df_f["Status_Label"] == "Atrasado"]["Valor"].sum()
+    total_pago = df_f[df_f["Status_Label"] == "Realizado"]["Valor"].sum()
+    qtd_7 = df_f[df_f["Status_Label"] == "Recebe em 7 dias"].shape[0]
 
     m1, m2, m3, m4 = st.columns(4)
-    with m1: metric_card("Total a receber", fmt_brl(total_receber), "Previsto para entrar", "green", icon_svg("calendar"))
-    with m2: metric_card("Atrasado", fmt_brl(total_atrasado), "Tudo em dia!" if total_atrasado == 0 else "Atenção a cobranças", "green" if total_atrasado == 0 else "red", icon_svg("alert"))
-    with m3: metric_card("Recebido", fmt_brl(total_recebido), "Visão do período filtrado", "green", icon_svg("check"))
-    with m4: metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qtd_7 == 0 else "red", icon_svg("calendar"))
+    with m1: metric_card("Total em aberto", fmt_brl(total_aberto), "A vencer + vencendo", "green", icon_svg("calendar"))
+    with m2: metric_card("Total atrasado", fmt_brl(total_atrasado), "Atenção aos juros" if total_atrasado > 0 else "Tudo certo", "red" if total_atrasado > 0 else "green", icon_svg("alert"))
+    with m3: metric_card("Total pago", fmt_brl(total_pago), "Neste filtro", "green", icon_svg("check"))
+    with m4: metric_card("Vence em 7 dias", str(qtd_7), "Prioridade", "red" if qtd_7 > 0 else "green", icon_svg("calendar"))
 
 # -----------------------------
-# Ação rápida
+# Ação Rápida
 # -----------------------------
 st.divider()
 st.subheader("Ação rápida")
@@ -208,72 +205,70 @@ st.subheader("Ação rápida")
 if not df_f.empty:
     df_acao = df_f[df_f["Status_BD"] != "Realizado"].copy()
     if df_acao.empty:
-        st.info("Nada para marcar como recebido com os filtros atuais.")
+        st.info("Todas as contas deste período já foram pagas.")
     else:
-        df_acao["prev_fmt"] = pd.to_datetime(df_acao["Previsao_Recebimento"]).dt.strftime("%d/%m/%Y")
+        df_acao["venc_fmt"] = pd.to_datetime(df_acao["Vencimento"]).dt.strftime("%d/%m/%Y")
         df_acao["valor_fmt"] = df_acao["Valor"].apply(fmt_brl)
 
-        op = df_acao.apply(lambda r: f"{limpar_txt(r['Cliente_Descricao'])} | {r['prev_fmt']} | {r['valor_fmt']} | {r['Status']}", axis=1).tolist()
-        map_id = dict(zip(op, df_acao["id"].tolist()))
+        opcoes = df_acao.apply(lambda r: f"{limpar_txt(r['Fornecedor_Descricao'])} | {r['venc_fmt']} | {r['valor_fmt']}", axis=1).tolist()
+        map_id = dict(zip(opcoes, df_acao["id"].tolist()))
 
         cA1, cA2 = st.columns([3, 1])
-        with cA1:
-            escolha = st.selectbox("Selecione a entrada:", options=op)
-            id_sel = int(map_id[escolha])
-        with cA2:
-            if st.button("Marcar como recebido", type="primary", use_container_width=True):
-                st.session_state["confirmar_recebido_id"] = id_sel
+        with cA1: escolha = st.selectbox("Selecione a conta para baixar:", options=opcoes)
+        id_sel = map_id.get(escolha)
 
-        if st.session_state.get("confirmar_recebido_id") == id_sel:
-            st.warning("Confirme: isso marcará como Realizado.")
-            if st.button("Confirmar recebimento", use_container_width=True):
-                conn, engine = conectar()
-                try:
-                    executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
-                    st.success("Recebimento confirmado.")
-                    st.session_state.pop("confirmar_recebido_id", None)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro: {e}")
-                finally:
-                    conn.close()
+        with cA2:
+            if st.button("Marcar como pago", type="primary", use_container_width=True):
+                if id_sel:
+                    conn, engine = conectar()
+                    try:
+                        executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
+                        st.success("Conta atualizada!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+                    finally:
+                        conn.close()
 
 # -----------------------------
-# Tabela Detalhada
+# Detalhamento
 # -----------------------------
 st.divider()
-st.subheader("Lista")
+st.subheader("Detalhamento")
 
-if df_f.empty:
-    st.success("Nenhum recebimento encontrado para os filtros.")
-else:
-    df_view = df_f[["Status", "Previsao_Recebimento", "Cliente_Descricao", "Categoria", "Valor"]].copy()
-    df_view.rename(columns={"Previsao_Recebimento": "Data", "Cliente_Descricao": "Descrição"}, inplace=True)
+if not df_f.empty:
+    df_view = df_f[["Status_BD", "Vencimento", "Fornecedor_Descricao", "Categoria", "Valor"]].copy()
+    df_view.rename(columns={"Fornecedor_Descricao": "Descrição", "Vencimento": "Data", "Status_BD": "Status"}, inplace=True)
     df_view["Descrição"] = df_view["Descrição"].apply(limpar_txt)
     df_view["Categoria"] = df_view["Categoria"].apply(limpar_txt)
     df_view["Data"] = pd.to_datetime(df_view["Data"], errors="coerce").dt.strftime("%d/%m/%Y")
     df_view["Valor"] = df_view["Valor"].apply(fmt_brl)
-    df_view["Status"] = df_view["Status"].apply(badge_status_minimal_receber)
 
-    df_export = df_f[["Status", "Previsao_Recebimento", "Cliente_Descricao", "Categoria", "Valor"]].copy()
-    df_export.rename(columns={"Previsao_Recebimento": "Data", "Cliente_Descricao": "Descrição"}, inplace=True)
+    venc_dt = pd.to_datetime(df_f["Vencimento"], errors="coerce").dt.date
+    atrasado_mask = (df_f["Status_BD"].astype(str) != "Realizado") & (venc_dt < hoje)
+
+    df_view["Status"] = [badge_status_minimal(str(s), bool(a)) for s, a in zip(df_f["Status_BD"].astype(str).tolist(), atrasado_mask.tolist())]
+
+    st.markdown(f'<div class="dt-table">{df_view.to_html(escape=False, index=False)}</div>', unsafe_allow_html=True)
+
+    df_export = df_f[["Status_Label", "Vencimento", "Fornecedor_Descricao", "Categoria", "Valor"]].copy()
+    df_export.rename(columns={"Fornecedor_Descricao": "Descrição", "Vencimento": "Data", "Status_Label": "Status"}, inplace=True)
     df_export["Descrição"] = df_export["Descrição"].apply(limpar_txt)
     df_export["Categoria"] = df_export["Categoria"].apply(limpar_txt)
     df_export["Data"] = pd.to_datetime(df_export["Data"], errors="coerce").dt.strftime("%d/%m/%Y")
     df_export["Valor"] = df_export["Valor"].apply(fmt_brl)
     df_export["Status"] = df_export["Status"].astype(str).str.replace("\n", " ", regex=False).str.strip()
 
-    e1, e2 = st.columns([1, 1])
-    with e1:
-        st.download_button("Baixar CSV", data=df_export.to_csv(index=False, sep=";").encode("utf-8"), file_name=f"contas_a_receber_{ano_sel}_{mes_sel:02d}.csv", mime="text/csv", use_container_width=True)
-    with e2:
+    c_exp1, c_exp2 = st.columns([1, 1])
+    with c_exp1:
+        csv = df_export.to_csv(index=False, sep=";").encode("utf-8")
+        st.download_button("📥 Baixar CSV", data=csv, file_name=f"contas_pagar_{ano_sel}_{mes_sel}.csv", mime="text/csv", use_container_width=True)
+    with c_exp2:
         try:
             import io
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                df_export.to_excel(writer, index=False, sheet_name="Contas a Receber")
-            st.download_button("Baixar Excel", data=buf.getvalue(), file_name=f"contas_a_receber_{ano_sel}_{mes_sel:02d}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                df_export.to_excel(writer, index=False, sheet_name="Contas")
+            st.download_button("📥 Baixar Excel", data=buffer.getvalue(), file_name=f"contas_pagar_{ano_sel}_{mes_sel}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         except:
-            st.warning("Para baixar Excel: pip install openpyxl")
-
-    st.markdown(f'<div class="dt-table">{df_view.to_html(escape=False, index=False)}</div>', unsafe_allow_html=True)
+            st.caption("Instale 'openpyxl' para baixar em Excel.")
