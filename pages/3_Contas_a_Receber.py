@@ -8,13 +8,7 @@ from components import metric_card, icon_svg
 from auth import exigir_login
 from database import conectar_banco
 
-# 1) Configuração
-st.set_page_config(
-    page_title="Contas a Pagar | D.Tech", 
-    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Contas a Receber | D.Tech", page_icon="logo.png", layout="wide")
 
 try:
     st.logo("logo.png")
@@ -97,19 +91,27 @@ def badge_status_minimal_receber(status: str) -> str:
 # -----------------------------
 # Dados
 # -----------------------------
-conn, engine = conectar()
-df = pd.read_sql_query("""
-    SELECT t.id, t.descricao as Cliente_Descricao, c.nome as Categoria, t.data_prevista as Previsao_Recebimento, t.valor as Valor, t.status as Status_BD
-    FROM transactions t
-    LEFT JOIN categories c ON t.categoria_id = c.id
-    WHERE t.tipo = 'Entrada'
-    ORDER BY t.data_prevista ASC
-""", conn)
-conn.close()
+try:
+    conn, engine = conectar()
+    df = pd.read_sql_query("""
+        SELECT t.id, t.descricao, c.nome, t.data_prevista, t.valor, t.status
+        FROM transactions t
+        LEFT JOIN categories c ON t.categoria_id = c.id
+        WHERE t.tipo = 'Entrada'
+        ORDER BY t.data_prevista ASC
+    """, conn)
+    conn.close()
+    
+    # Blindando os nomes das colunas contra o banco na nuvem
+    df.columns = ["id", "Cliente_Descricao", "Categoria", "Previsao_Recebimento", "Valor", "Status_BD"]
+
+except Exception as e:
+    st.error(f"Erro ao conectar banco: {e}")
+    st.stop()
 
 if df.empty:
     st.info("Nenhuma receita registrada ainda. Cadastre em 'Lançamentos'.")
-    st.stop()
+    df = pd.DataFrame(columns=["id", "Cliente_Descricao", "Categoria", "Previsao_Recebimento", "Valor", "Status_BD"])
 
 for col in ["Cliente_Descricao", "Categoria", "Status_BD"]:
     if col in df.columns:
@@ -128,7 +130,10 @@ def definir_status(row):
     if hoje <= row["Previsao_Recebimento"] <= em_7: return "Recebe em 7 dias"
     return "A receber"
 
-df["Status"] = df.apply(definir_status, axis=1)
+if not df.empty:
+    df["Status"] = df.apply(definir_status, axis=1)
+else:
+    df["Status"] = []
 
 # -----------------------------
 # Filtros
@@ -150,27 +155,29 @@ with f3: busca = st.text_input("Buscar cliente/descrição", placeholder="Ex: ve
 f4, f5, f6 = st.columns([1.6, 1.6, 1.2])
 with f4: status_filtro = st.multiselect("Status", options=["Atrasado", "Recebe em 7 dias", "A receber", "Recebido"], default=["Atrasado", "Recebe em 7 dias", "A receber"])
 with f5:
-    cats = sorted([c for c in df["Categoria"].dropna().unique().tolist()])
+    cats = sorted([c for c in df["Categoria"].dropna().unique().tolist()]) if not df.empty else []
     categoria_sel = st.multiselect("Categoria", options=cats, default=[])
 with f6: ordenar = st.selectbox("Ordenar", options=["Previsão (mais próximo)", "Valor (maior)", "Valor (menor)"])
 
-df_f = df[(df["Prev_dt"].dt.year == int(ano_sel)) & (df["Prev_dt"].dt.month == int(mes_sel))].copy()
+df_f = pd.DataFrame()
+if not df.empty:
+    df_f = df[(df["Prev_dt"].dt.year == int(ano_sel)) & (df["Prev_dt"].dt.month == int(mes_sel))].copy()
 
-if status_filtro: df_f = df_f[df_f["Status"].isin(status_filtro)]
-if categoria_sel: df_f = df_f[df_f["Categoria"].isin(categoria_sel)]
-if busca.strip(): df_f = df_f[df_f["Cliente_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
+    if status_filtro: df_f = df_f[df_f["Status"].isin(status_filtro)]
+    if categoria_sel: df_f = df_f[df_f["Categoria"].isin(categoria_sel)]
+    if busca.strip(): df_f = df_f[df_f["Cliente_Descricao"].astype(str).str.contains(busca.strip(), case=False, na=False)]
 
-if not df_f.empty:
-    vmin, vmax = float(df_f["Valor"].min()), float(df_f["Valor"].max())
-    if vmin < vmax:
-        faixa = st.slider("Faixa de valor (R$)", min_value=vmin, max_value=vmax, value=(vmin, vmax))
-        df_f = df_f[(df_f["Valor"] >= faixa[0]) & (df_f["Valor"] <= faixa[1])]
-    else:
-        st.info(f"Faixa de valor: apenas um valor → {fmt_brl(vmin)}")
+    if not df_f.empty:
+        vmin, vmax = float(df_f["Valor"].min()), float(df_f["Valor"].max())
+        if vmin < vmax:
+            faixa = st.slider("Faixa de valor (R$)", min_value=vmin, max_value=vmax, value=(vmin, vmax))
+            df_f = df_f[(df_f["Valor"] >= faixa[0]) & (df_f["Valor"] <= faixa[1])]
+        else:
+            st.info(f"Faixa de valor: apenas um valor → {fmt_brl(vmin)}")
 
-if ordenar == "Valor (maior)": df_f = df_f.sort_values("Valor", ascending=False)
-elif ordenar == "Valor (menor)": df_f = df_f.sort_values("Valor", ascending=True)
-else: df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
+    if ordenar == "Valor (maior)": df_f = df_f.sort_values("Valor", ascending=False)
+    elif ordenar == "Valor (menor)": df_f = df_f.sort_values("Valor", ascending=True)
+    else: df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
 
 # -----------------------------
 # Resumo
@@ -178,16 +185,19 @@ else: df_f = df_f.sort_values("Previsao_Recebimento", ascending=True)
 st.divider()
 st.subheader("Resumo")
 
-total_receber = df_f[df_f["Status"].isin(["A receber", "Recebe em 7 dias"])]["Valor"].sum()
-total_atrasado = df_f[df_f["Status"] == "Atrasado"]["Valor"].sum()
-total_recebido = df_f[df_f["Status"] == "Recebido"]["Valor"].sum()
-qtd_7 = df_f[df_f["Status"] == "Recebe em 7 dias"].shape[0]
+if df_f.empty:
+    st.info("Nenhum dado encontrado para este período.")
+else:
+    total_receber = df_f[df_f["Status"].isin(["A receber", "Recebe em 7 dias"])]["Valor"].sum()
+    total_atrasado = df_f[df_f["Status"] == "Atrasado"]["Valor"].sum()
+    total_recebido = df_f[df_f["Status"] == "Recebido"]["Valor"].sum()
+    qtd_7 = df_f[df_f["Status"] == "Recebe em 7 dias"].shape[0]
 
-m1, m2, m3, m4 = st.columns(4)
-with m1: metric_card("Total a receber", fmt_brl(total_receber), "Previsto para entrar", "green", icon_svg("calendar"))
-with m2: metric_card("Atrasado", fmt_brl(total_atrasado), "Tudo em dia!" if total_atrasado == 0 else "Cobrar clientes / repasse", "green" if total_atrasado == 0 else "red", icon_svg("alert"))
-with m3: metric_card("Recebido", fmt_brl(total_recebido), "Visão do período filtrado", "green", icon_svg("check"))
-with m4: metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qtd_7 == 0 else "red", icon_svg("calendar"))
+    m1, m2, m3, m4 = st.columns(4)
+    with m1: metric_card("Total a receber", fmt_brl(total_receber), "Previsto para entrar", "green", icon_svg("calendar"))
+    with m2: metric_card("Atrasado", fmt_brl(total_atrasado), "Tudo em dia!" if total_atrasado == 0 else "Atenção a cobranças", "green" if total_atrasado == 0 else "red", icon_svg("alert"))
+    with m3: metric_card("Recebido", fmt_brl(total_recebido), "Visão do período filtrado", "green", icon_svg("check"))
+    with m4: metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qtd_7 == 0 else "red", icon_svg("calendar"))
 
 # -----------------------------
 # Ação rápida
@@ -195,37 +205,38 @@ with m4: metric_card("Recebe em 7 dias", str(qtd_7), "Prioridade", "green" if qt
 st.divider()
 st.subheader("Ação rápida")
 
-df_acao = df_f[df_f["Status_BD"] != "Realizado"].copy()
-if df_acao.empty:
-    st.info("Nada para marcar como recebido com os filtros atuais.")
-else:
-    df_acao["prev_fmt"] = pd.to_datetime(df_acao["Previsao_Recebimento"]).dt.strftime("%d/%m/%Y")
-    df_acao["valor_fmt"] = df_acao["Valor"].apply(fmt_brl)
+if not df_f.empty:
+    df_acao = df_f[df_f["Status_BD"] != "Realizado"].copy()
+    if df_acao.empty:
+        st.info("Nada para marcar como recebido com os filtros atuais.")
+    else:
+        df_acao["prev_fmt"] = pd.to_datetime(df_acao["Previsao_Recebimento"]).dt.strftime("%d/%m/%Y")
+        df_acao["valor_fmt"] = df_acao["Valor"].apply(fmt_brl)
 
-    op = df_acao.apply(lambda r: f"{limpar_txt(r['Cliente_Descricao'])} | {r['prev_fmt']} | {r['valor_fmt']} | {r['Status']}", axis=1).tolist()
-    map_id = dict(zip(op, df_acao["id"].tolist()))
+        op = df_acao.apply(lambda r: f"{limpar_txt(r['Cliente_Descricao'])} | {r['prev_fmt']} | {r['valor_fmt']} | {r['Status']}", axis=1).tolist()
+        map_id = dict(zip(op, df_acao["id"].tolist()))
 
-    cA1, cA2 = st.columns([3, 1])
-    with cA1:
-        escolha = st.selectbox("Selecione a entrada:", options=op)
-        id_sel = int(map_id[escolha])
-    with cA2:
-        if st.button("Marcar como recebido", type="primary", use_container_width=True):
-            st.session_state["confirmar_recebido_id"] = id_sel
+        cA1, cA2 = st.columns([3, 1])
+        with cA1:
+            escolha = st.selectbox("Selecione a entrada:", options=op)
+            id_sel = int(map_id[escolha])
+        with cA2:
+            if st.button("Marcar como recebido", type="primary", use_container_width=True):
+                st.session_state["confirmar_recebido_id"] = id_sel
 
-    if st.session_state.get("confirmar_recebido_id") == id_sel:
-        st.warning("Confirme: isso marcará como Realizado.")
-        if st.button("Confirmar recebimento", use_container_width=True):
-            conn, engine = conectar()
-            try:
-                executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
-                st.success("Recebimento confirmado.")
-                st.session_state.pop("confirmar_recebido_id", None)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro: {e}")
-            finally:
-                conn.close()
+        if st.session_state.get("confirmar_recebido_id") == id_sel:
+            st.warning("Confirme: isso marcará como Realizado.")
+            if st.button("Confirmar recebimento", use_container_width=True):
+                conn, engine = conectar()
+                try:
+                    executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
+                    st.success("Recebimento confirmado.")
+                    st.session_state.pop("confirmar_recebido_id", None)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+                finally:
+                    conn.close()
 
 # -----------------------------
 # Tabela Detalhada
