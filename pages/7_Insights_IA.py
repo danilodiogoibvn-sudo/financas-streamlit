@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+import calendar
 import base64
 import streamlit.components.v1 as components
 from google import genai
@@ -8,7 +9,6 @@ from google import genai
 from style import carregar_estilos
 from auth import exigir_login
 from database import conectar_banco
-# 👇 Importando os componentes visuais oficiais da D.Tech
 from components import metric_card, icon_svg
 
 # ==========================================
@@ -83,6 +83,10 @@ hoje = date.today()
 mes_atual = hoje.month
 ano_atual = hoje.year
 
+# 🚀 NOVIDADE: Calculando quantos dias faltam para acabar o mês
+ultimo_dia = calendar.monthrange(ano_atual, mes_atual)[1]
+dias_restantes = ultimo_dia - hoje.day
+
 conn, engine = conectar()
 
 query = """
@@ -129,7 +133,7 @@ else:
     texto_categorias = "- Nenhuma despesa registrada no mês."
 
 # ==========================================
-# RESUMO VISUAL (AGORA PADRÃO D.TECH!)
+# RESUMO VISUAL (PADRÃO D.TECH!)
 # ==========================================
 col1, col2, col3 = st.columns(3)
 
@@ -140,10 +144,10 @@ with col2:
     metric_card("Despesas do mês", fmt_brl(saidas), "Total que saiu", "red" if saidas > 0 else "gray", icon_svg("down"))
 
 with col3:
-    metric_card("Saldo do mês", fmt_brl(saldo), "Resultado final", "green" if saldo >= 0 else "red", icon_svg("wallet"))
+    metric_card("Saldo do mês", fmt_brl(saldo), "Resultado parcial", "green" if saldo >= 0 else "red", icon_svg("wallet"))
 
 st.markdown("### 🧠 Inteligência Financeira")
-st.info("A análise é gerada automaticamente com base nos dados financeiros do mês atual.")
+st.info("A análise é gerada automaticamente com base nos dados financeiros parciais do mês atual.")
 
 # ==========================================
 # CHAVE DA API VIA SECRETS
@@ -162,34 +166,34 @@ if st.button("🧠 Gerar Análise Financeira do Mês", use_container_width=True,
         try:
             client = genai.Client(api_key=api_key)
 
+            # 🚀 NOVIDADE: O Prompt agora entende a passagem do tempo!
             prompt = f"""
             Você é um consultor financeiro especialista em gestão empresarial.
-
             Analise EXCLUSIVAMENTE os dados abaixo da empresa "{empresa}".
 
-            Usuário dono da análise: {usuario_logado}
+            CONTEXTO TEMPORAL IMPORTANTE:
+            Hoje é dia {hoje.strftime('%d/%m/%Y')}. Faltam {dias_restantes} dias para o mês acabar. 
+            Como o mês ainda está no meio/andamento, NÃO fale como se o mês estivesse fechado. 
+            Seu foco deve ser em orientar o ritmo de gastos para o resto do mês e garantir que o caixa não fique no vermelho até o final.
 
-            Dados do mês atual:
-            - Receitas totais: R$ {entradas:,.2f}
-            - Despesas totais: R$ {saidas:,.2f}
-            - Saldo final: R$ {saldo:,.2f}
+            Dados parciais do mês atual:
+            - Receitas totais até hoje: R$ {entradas:,.2f}
+            - Despesas totais até hoje: R$ {saidas:,.2f}
+            - Saldo atual: R$ {saldo:,.2f}
 
-            Principais categorias de gastos:
+            Principais categorias de gastos até o momento:
             {texto_categorias}
 
             Monte uma resposta bonita, clara e profissional em português do Brasil com esta estrutura:
 
-            ## Diagnóstico do mês
-            Faça um resumo objetivo da saúde financeira.
+            ## Diagnóstico da Quinzena/Semana
+            Faça um resumo de como está o ritmo financeiro da empresa considerando os dias que faltam para o mês acabar.
 
-            ## Principais alertas
-            Mostre onde estão os maiores gastos e riscos.
+            ## Atenção ao Caixa
+            Mostre onde estão os maiores gastos e se o ritmo de despesa está perigoso.
 
-            ## Oportunidades de economia
-            Dê 2 dicas práticas e realistas.
-
-            ## Plano para o próximo mês
-            Sugira próximos passos financeiros.
+            ## Estratégia para o fim do mês
+            Dê 2 dicas práticas e realistas do que ele deve fazer nos próximos {dias_restantes} dias.
 
             Regras:
             - Não invente números.
