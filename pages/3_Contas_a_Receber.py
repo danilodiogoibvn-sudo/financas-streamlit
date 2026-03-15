@@ -38,6 +38,8 @@ st.markdown("""
 
 exigir_login()
 
+usuario_logado = st.session_state.get("usuario_atual", "danilo")
+
 st.title("Contas a Receber")
 st.markdown("<span style='color: #A0AEC0;'>Acompanhe previsões de recebimento e pagamentos confirmados.</span>", unsafe_allow_html=True)
 
@@ -93,13 +95,15 @@ def badge_status_minimal_receber(status: str) -> str:
 # -----------------------------
 try:
     conn, engine = conectar()
-    df = pd.read_sql_query("""
+    query = """
         SELECT t.id, t.descricao, c.nome, t.data_prevista, t.valor, t.status
         FROM transactions t
         LEFT JOIN categories c ON t.categoria_id = c.id
-        WHERE t.tipo = 'Entrada'
+        WHERE t.tipo = 'Entrada' AND t.usuario_dono = ?
         ORDER BY t.data_prevista ASC
-    """, conn)
+    """
+    if engine == "postgres": query = query.replace("?", "%s")
+    df = pd.read_sql_query(query, conn, params=(usuario_logado,))
     conn.close()
     
     # Blindando os nomes das colunas contra o banco na nuvem
@@ -229,7 +233,7 @@ if not df_f.empty:
             if st.button("Confirmar recebimento", use_container_width=True):
                 conn, engine = conectar()
                 try:
-                    executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=?", (date.today(), id_sel))
+                    executar_sql(conn, engine, "UPDATE transactions SET status='Realizado', data_real=? WHERE id=? AND usuario_dono=?", (date.today(), id_sel, usuario_logado))
                     st.success("Recebimento confirmado.")
                     st.session_state.pop("confirmar_recebido_id", None)
                     st.rerun()
