@@ -10,26 +10,35 @@ st.set_page_config(page_title="Administração", page_icon="⚙️", layout="wid
 st.logo("logo.png")
 
 # ============================
-# UI COMPACTA
+# UI COMPACTA (SIDEBAR MENOR + CONTEÚDO MAIOR)
 # ============================
 st.markdown("""
 <style>
+/* 1) Diminui a sidebar (menu lateral) */
 [data-testid="stSidebar"]{
     width: 190px !important;
     min-width: 190px !important;
 }
+
+/* 2) Dá mais espaço pro conteúdo principal */
 section.main > div{
     max-width: 100% !important;
 }
+
+/* 3) Ajusta padding do conteúdo */
 .block-container{
     padding-left: 2.2rem !important;
     padding-right: 2.2rem !important;
     padding-top: 1.2rem !important;
 }
+
+/* 4) Menu lateral mais enxuto */
 [data-testid="stSidebarNav"] li a{
     padding-top: 6px !important;
     padding-bottom: 6px !important;
 }
+
+/* 5) Headers */
 h1, h2, h3 { margin-bottom: 0.2rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -54,8 +63,9 @@ col1, col2 = st.columns([1, 2])
 def fmt_brl(x):
     try:
         return f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
+    except Exception:
         return "R$ 0,00"
+
 
 def conectar_admin():
     db_url = os.getenv("DATABASE_URL", "").strip()
@@ -68,53 +78,75 @@ def conectar_admin():
             sslmode="require",
             connect_timeout=10
         )
-        return conn, True
+        return conn, True, db_url
 
     conn = sqlite3.connect("admin.db")
-    return conn, False
+    return conn, False, "admin.db"
+
 
 def preparar_admin(conn, usando_postgres, db_url):
     cur = conn.cursor()
     try:
-        # Base
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS usuarios (
-                usuario TEXT PRIMARY KEY,
-                senha TEXT,
-                db_nome TEXT,
-                empresa TEXT,
-                ativo INTEGER DEFAULT 1
-            )
-        """)
+        # Cria a tabela já completa para evitar ALTER TABLE no Postgres
+        if usando_postgres:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS usuarios (
+                    usuario TEXT PRIMARY KEY,
+                    senha TEXT,
+                    db_nome TEXT,
+                    empresa TEXT,
+                    ativo INTEGER DEFAULT 1,
+                    plano TEXT DEFAULT 'Starter',
+                    valor_mensal DOUBLE PRECISION DEFAULT 0,
+                    vencimento TEXT
+                )
+            """)
+        else:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS usuarios (
+                    usuario TEXT PRIMARY KEY,
+                    senha TEXT,
+                    db_nome TEXT,
+                    empresa TEXT,
+                    ativo INTEGER DEFAULT 1,
+                    plano TEXT DEFAULT 'Starter',
+                    valor_mensal REAL DEFAULT 0,
+                    vencimento TEXT
+                )
+            """)
 
-        # Migrações
-        try:
-            cur.execute("ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1")
-        except:
-            pass
+        # Garantia extra para SQLite antigo
+        if not usando_postgres:
+            try:
+                cur.execute("ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1")
+            except Exception:
+                pass
 
-        try:
-            cur.execute("ALTER TABLE usuarios ADD COLUMN plano TEXT DEFAULT 'Starter'")
-        except:
-            pass
+            try:
+                cur.execute("ALTER TABLE usuarios ADD COLUMN plano TEXT DEFAULT 'Starter'")
+            except Exception:
+                pass
 
-        try:
-            cur.execute("ALTER TABLE usuarios ADD COLUMN valor_mensal REAL DEFAULT 0")
-        except:
-            pass
+            try:
+                cur.execute("ALTER TABLE usuarios ADD COLUMN valor_mensal REAL DEFAULT 0")
+            except Exception:
+                pass
 
-        try:
-            cur.execute("ALTER TABLE usuarios ADD COLUMN vencimento TEXT")
-        except:
-            pass
+            try:
+                cur.execute("ALTER TABLE usuarios ADD COLUMN vencimento TEXT")
+            except Exception:
+                pass
 
-        # garante usuário danilo
+        # Garante usuário principal
         if usando_postgres:
             cur.execute("SELECT usuario FROM usuarios WHERE usuario=%s", ("danilo",))
             existe = cur.fetchone()
+
             if not existe:
                 cur.execute("""
-                    INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento)
+                    INSERT INTO usuarios (
+                        usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento
+                    )
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     "danilo",
@@ -131,12 +163,16 @@ def preparar_admin(conn, usando_postgres, db_url):
                     "UPDATE usuarios SET empresa=%s WHERE usuario=%s",
                     ("D.Tech - Danilo Diogo", "danilo")
                 )
+
         else:
             cur.execute("SELECT usuario FROM usuarios WHERE usuario=?", ("danilo",))
             existe = cur.fetchone()
+
             if not existe:
                 cur.execute("""
-                    INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento)
+                    INSERT INTO usuarios (
+                        usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento
+                    )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     "danilo",
@@ -155,17 +191,20 @@ def preparar_admin(conn, usando_postgres, db_url):
                 )
 
         conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
     finally:
         cur.close()
 
-# Planos padrão
+
 PLANOS = {
     "Starter": 49.90,
     "Pro": 99.90,
     "Business": 199.90,
 }
-
-db_url = os.getenv("DATABASE_URL", "").strip()
 
 # ==================================================
 # COLUNA ESQUERDA: NOVO CLIENTE
@@ -207,9 +246,9 @@ with col1:
                 elif " " in novo_user:
                     st.warning("O login não pode conter espaços.")
                 else:
-                    conn, usando_postgres = conectar_admin()
+                    conn, usando_postgres, db_ref = conectar_admin()
                     try:
-                        preparar_admin(conn, usando_postgres, db_url)
+                        preparar_admin(conn, usando_postgres, db_ref)
                         cur = conn.cursor()
 
                         novo_db = f"cliente_{novo_user}.db"
@@ -217,15 +256,18 @@ with col1:
                         if usando_postgres:
                             cur.execute("SELECT usuario FROM usuarios WHERE usuario=%s", (novo_user,))
                             existe = cur.fetchone()
+
                             if existe:
                                 st.error("Erro: este usuário já existe.")
                             else:
                                 cur.execute("""
-                                    INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento)
+                                    INSERT INTO usuarios (
+                                        usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento
+                                    )
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                                 """, (
                                     novo_user,
-                                    None,  # primeiro acesso no Neon
+                                    None,  # primeiro acesso no Neon/Postgres
                                     novo_db,
                                     nova_empresa,
                                     1,
@@ -235,30 +277,39 @@ with col1:
                                 ))
                                 conn.commit()
 
-                                inicializar_banco(db_url)
+                                # No cloud, tudo usa o mesmo Postgres
+                                inicializar_banco(db_ref)
+
                                 st.success(f"Cliente **{novo_user}** criado com sucesso!")
                                 st.balloons()
+
                         else:
                             cur.execute("SELECT usuario FROM usuarios WHERE usuario=?", (novo_user,))
                             existe = cur.fetchone()
+
                             if existe:
                                 st.error("Erro: este usuário já existe.")
                             else:
                                 cur.execute("""
-                                    INSERT INTO usuarios (usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento)
-                                    VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+                                    INSERT INTO usuarios (
+                                        usuario, senha, db_nome, empresa, ativo, plano, valor_mensal, vencimento
+                                    )
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
                                     novo_user,
                                     "",  # primeiro acesso no SQLite
                                     novo_db,
                                     nova_empresa,
+                                    1,
                                     plano_sel,
                                     float(valor_mensal),
                                     vencimento.isoformat()
                                 ))
                                 conn.commit()
 
+                                # No local, cria o banco do cliente
                                 inicializar_banco(novo_db)
+
                                 st.success(f"Cliente **{novo_user}** criado com sucesso!")
                                 st.balloons()
 
@@ -283,9 +334,9 @@ with col2:
     with f3:
         somente_vencidos = st.checkbox("Somente vencidos", value=False)
 
-    conn, usando_postgres = conectar_admin()
+    conn, usando_postgres, db_ref = conectar_admin()
     try:
-        preparar_admin(conn, usando_postgres, db_url)
+        preparar_admin(conn, usando_postgres, db_ref)
         cur = conn.cursor()
 
         if usando_postgres:
@@ -321,7 +372,7 @@ with col2:
                 if venc:
                     try:
                         venc_dt = date.fromisoformat(str(venc))
-                    except:
+                    except Exception:
                         venc_dt = None
 
                 if not mostrar_bloqueados and ativo == 0:
@@ -399,33 +450,47 @@ with col2:
 
                         b1, b2, b3, b4 = st.columns(4)
 
+                        # 1) Bloquear / Ativar
                         with b1:
                             novo_status = 0 if ativo == 1 else 1
                             label = "Bloquear" if ativo == 1 else "Ativar"
                             if st.button(label, key=f"block_{user}", use_container_width=True):
-                                if usando_postgres:
-                                    conn.cursor().execute("UPDATE usuarios SET ativo=%s WHERE usuario=%s", (novo_status, user))
-                                else:
-                                    conn.execute("UPDATE usuarios SET ativo=? WHERE usuario=?", (novo_status, user))
-                                conn.commit()
-                                st.rerun()
+                                try:
+                                    c1 = conn.cursor()
+                                    if usando_postgres:
+                                        c1.execute("UPDATE usuarios SET ativo=%s WHERE usuario=%s", (novo_status, user))
+                                    else:
+                                        c1.execute("UPDATE usuarios SET ativo=? WHERE usuario=?", (novo_status, user))
+                                    conn.commit()
+                                    c1.close()
+                                    st.rerun()
+                                except Exception as e:
+                                    conn.rollback()
+                                    st.error(f"Erro ao alterar status: {e}")
 
+                        # 2) Liberar primeiro acesso / resetar senha
                         with b2:
-                            if st.button("Resetar senha", key=f"reset_{user}", use_container_width=True):
-                                if usando_postgres:
+                            if st.button("Liberar 1º acesso", key=f"reset_{user}", use_container_width=True):
+                                try:
                                     c2 = conn.cursor()
-                                    c2.execute("UPDATE usuarios SET senha=%s WHERE usuario=%s", (None, user))
+                                    if usando_postgres:
+                                        c2.execute("UPDATE usuarios SET senha=%s WHERE usuario=%s", (None, user))
+                                    else:
+                                        c2.execute("UPDATE usuarios SET senha=? WHERE usuario=?", ("", user))
+                                    conn.commit()
                                     c2.close()
-                                else:
-                                    conn.execute("UPDATE usuarios SET senha='' WHERE usuario=?", (user,))
-                                conn.commit()
-                                st.success(f"Senha de {user} resetada.")
-                                st.rerun()
+                                    st.success(f"Primeiro acesso liberado para {user}.")
+                                    st.rerun()
+                                except Exception as e:
+                                    conn.rollback()
+                                    st.error(f"Erro ao liberar primeiro acesso: {e}")
 
+                        # 3) Editar plano
                         with b3:
                             if st.button("Editar plano", key=f"edit_{user}", use_container_width=True):
                                 st.session_state[f"edit_open_{user}"] = True
 
+                        # 4) Excluir
                         with b4:
                             conf_key = f"conf_del_{user}"
                             if conf_key not in st.session_state:
@@ -438,17 +503,22 @@ with col2:
                             else:
                                 st.warning("Confirme para excluir.")
                                 if st.button("Confirmar", key=f"confirm_del_{user}", type="primary", use_container_width=True):
-                                    if usando_postgres:
+                                    try:
                                         c4 = conn.cursor()
-                                        c4.execute("DELETE FROM usuarios WHERE usuario=%s", (user,))
+                                        if usando_postgres:
+                                            c4.execute("DELETE FROM usuarios WHERE usuario=%s", (user,))
+                                        else:
+                                            c4.execute("DELETE FROM usuarios WHERE usuario=?", (user,))
+                                        conn.commit()
                                         c4.close()
-                                    else:
-                                        conn.execute("DELETE FROM usuarios WHERE usuario=?", (user,))
-                                    conn.commit()
-                                    st.session_state[conf_key] = False
-                                    st.error(f"Cliente {user} removido permanentemente.")
-                                    st.rerun()
+                                        st.session_state[conf_key] = False
+                                        st.error(f"Cliente {user} removido permanentemente.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        conn.rollback()
+                                        st.error(f"Erro ao excluir cliente: {e}")
 
+                        # painel de edição
                         if st.session_state.get(f"edit_open_{user}", False):
                             st.divider()
                             st.subheader("Editar plano / cobrança")
@@ -484,24 +554,28 @@ with col2:
                                     cancelar = st.form_submit_button("Cancelar", use_container_width=True)
 
                                 if salvar:
-                                    if usando_postgres:
+                                    try:
                                         c3 = conn.cursor()
-                                        c3.execute("""
-                                            UPDATE usuarios
-                                            SET plano=%s, valor_mensal=%s, vencimento=%s
-                                            WHERE usuario=%s
-                                        """, (novo_plano, float(novo_valor), novo_venc.isoformat(), user))
+                                        if usando_postgres:
+                                            c3.execute("""
+                                                UPDATE usuarios
+                                                SET plano=%s, valor_mensal=%s, vencimento=%s
+                                                WHERE usuario=%s
+                                            """, (novo_plano, float(novo_valor), novo_venc.isoformat(), user))
+                                        else:
+                                            c3.execute("""
+                                                UPDATE usuarios
+                                                SET plano=?, valor_mensal=?, vencimento=?
+                                                WHERE usuario=?
+                                            """, (novo_plano, float(novo_valor), novo_venc.isoformat(), user))
+                                        conn.commit()
                                         c3.close()
-                                    else:
-                                        conn.execute("""
-                                            UPDATE usuarios
-                                            SET plano=?, valor_mensal=?, vencimento=?
-                                            WHERE usuario=?
-                                        """, (novo_plano, float(novo_valor), novo_venc.isoformat(), user))
-                                    conn.commit()
-                                    st.session_state[f"edit_open_{user}"] = False
-                                    st.success("Dados atualizados.")
-                                    st.rerun()
+                                        st.session_state[f"edit_open_{user}"] = False
+                                        st.success("Dados atualizados.")
+                                        st.rerun()
+                                    except Exception as e:
+                                        conn.rollback()
+                                        st.error(f"Erro ao atualizar dados: {e}")
 
                                 if cancelar:
                                     st.session_state[f"edit_open_{user}"] = False
