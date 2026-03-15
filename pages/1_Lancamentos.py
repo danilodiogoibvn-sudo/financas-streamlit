@@ -79,6 +79,9 @@ tbody tr:hover td { background:rgba(255,255,255,0.02); }
 
 exigir_login()
 
+# Captura quem é o usuário logado agora
+usuario_logado = st.session_state.get("usuario_atual", "danilo")
+
 st.title("Lançamentos")
 st.markdown("<span style='color: #A0AEC0;'>Registre suas entradas e saídas financeiras conectadas às suas contas e categorias.</span>", unsafe_allow_html=True)
 
@@ -212,22 +215,29 @@ def registrar_log(acao: str, detalhes: str):
     try:
         conn, engine = conectar()
         usuario = st.session_state.get("usuario_atual", "desconhecido")
-        agora = obter_agora_br() # Usando hora do Brasil
+        agora = obter_agora_br() 
         executar_sql(conn, engine, "INSERT INTO audit_log (data_hora, usuario, acao, detalhes) VALUES (?, ?, ?, ?)", (agora, usuario, acao, detalhes))
         conn.close()
     except:
         pass
 
 # -----------------------------
-# DADOS INICIAIS
+# DADOS INICIAIS (Apenas do usuário logado)
 # -----------------------------
 conn, engine = conectar()
-df_contas = pd.read_sql_query("SELECT id, nome FROM accounts", conn)
-df_categorias = pd.read_sql_query("SELECT id, nome, tipo FROM categories", conn)
+
+query_acc = "SELECT id, nome FROM accounts WHERE usuario_dono=?"
+if engine == "postgres": query_acc = query_acc.replace("?", "%s")
+df_contas = pd.read_sql_query(query_acc, conn, params=(usuario_logado,))
+
+query_cat = "SELECT id, nome, tipo FROM categories WHERE usuario_dono=?"
+if engine == "postgres": query_cat = query_cat.replace("?", "%s")
+df_categorias = pd.read_sql_query(query_cat, conn, params=(usuario_logado,))
+
 conn.close()
 
 if df_contas.empty or df_categorias.empty:
-    st.warning("⚠️ Você precisa cadastrar pelo menos uma **Conta** e uma **Categoria** antes de fazer lançamentos.")
+    st.warning("⚠️ Você precisa cadastrar pelo menos uma **Conta** e uma **Categoria** na aba de Cadastros antes de fazer lançamentos.")
 else:
     col_form, col_table = st.columns([1, 2])
 
@@ -257,9 +267,9 @@ else:
 
                     conn, engine = conectar()
                     executar_sql(conn, engine, """
-                        INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id))
+                        INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id, usuario_dono)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id, usuario_logado))
                     conn.close()
 
                     st.success("Lançamento salvo com sucesso!")
@@ -297,19 +307,19 @@ else:
             conta_sel = st.selectbox("Conta", options=["Todas"] + sorted(df_contas["nome"].unique().tolist()))
 
         conn, engine = conectar()
-        # 🚀 CORREÇÃO AQUI: Sem "as Nome" para não confundir o Pandas!
         query = """
             SELECT t.id, t.status, t.data_prevista, t.tipo, t.descricao, c.nome, a.nome, t.valor
             FROM transactions t
             LEFT JOIN categories c ON t.categoria_id = c.id
             LEFT JOIN accounts a ON t.conta_id = a.id
+            WHERE t.usuario_dono = ?
             ORDER BY t.id DESC
         """
-        df_transacoes = pd.read_sql_query(query, conn)
+        if engine == "postgres": query = query.replace("?", "%s")
+        df_transacoes = pd.read_sql_query(query, conn, params=(usuario_logado,))
         conn.close()
 
         if not df_transacoes.empty:
-            # 🚀 CORREÇÃO AQUI: Forçando as colunas exatas
             df_transacoes.columns = ["ID", "Status", "Data", "Tipo", "Descrição", "Categoria", "Conta", "Valor"]
             
             df_transacoes["Status"] = df_transacoes["Status"].apply(limpar_txt)
@@ -377,17 +387,19 @@ else:
     st.subheader("Gerenciar Lançamentos")
 
     conn, engine = conectar()
-    df_raw = pd.read_sql_query("""
+    query_raw = """
         SELECT t.id, t.tipo, t.descricao, t.valor, t.data_prevista, t.status, a.nome, c.nome, t.conta_id, t.categoria_id
         FROM transactions t
         LEFT JOIN accounts a ON t.conta_id = a.id
         LEFT JOIN categories c ON t.categoria_id = c.id
+        WHERE t.usuario_dono = ?
         ORDER BY t.id DESC
-    """, conn)
+    """
+    if engine == "postgres": query_raw = query_raw.replace("?", "%s")
+    df_raw = pd.read_sql_query(query_raw, conn, params=(usuario_logado,))
     conn.close()
 
     if not df_raw.empty:
-        # 🚀 CORREÇÃO AQUI também para a tabela debaixo!
         df_raw.columns = ["id", "tipo", "descricao", "valor", "data_prevista", "status", "conta_nome", "categoria_nome", "conta_id", "categoria_id"]
         
         df_raw["valor_num"] = pd.to_numeric(df_raw.get("valor", 0), errors="coerce").fillna(0.0)
@@ -441,8 +453,9 @@ else:
                     data_real = data_edit if status_edit == "Realizado" else None
                     conn, engine = conectar()
                     executar_sql(conn, engine, """
-                        UPDATE transactions SET tipo = ?, descricao = ?, valor = ?, data_prevista = ?, data_real = ?, status = ?, conta_id = ?, categoria_id = ? WHERE id = ?
-                    """, (tipo_edit, descricao_edit.strip(), float(valor_edit), data_edit, data_real, status_edit, conta_edit_id, categoria_edit_id, int(id_selecionado)))
+                        UPDATE transactions SET tipo = ?, descricao = ?, valor = ?, data_prevista = ?, data_real = ?, status = ?, conta_id = ?, categoria_id = ? 
+                        WHERE id = ? AND usuario_dono = ?
+                    """, (tipo_edit, descricao_edit.strip(), float(valor_edit), data_edit, data_real, status_edit, conta_edit_id, categoria_edit_id, int(id_selecionado), usuario_logado))
                     conn.close()
                     st.success("✅ Lançamento atualizado com sucesso!")
                     st.rerun()
@@ -451,9 +464,10 @@ else:
             if st.button("Duplicar", use_container_width=True):
                 conn, engine = conectar()
                 novo_id = executar_sql(conn, engine, """
-                    INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id)
-                    SELECT tipo, descricao, valor, data_prevista, NULL, 'Previsto', conta_id, categoria_id FROM transactions WHERE id = ?
-                """, (int(id_selecionado),))
+                    INSERT INTO transactions (tipo, descricao, valor, data_prevista, data_real, status, conta_id, categoria_id, usuario_dono)
+                    SELECT tipo, descricao, valor, data_prevista, NULL, 'Previsto', conta_id, categoria_id, usuario_dono 
+                    FROM transactions WHERE id = ? AND usuario_dono = ?
+                """, (int(id_selecionado), usuario_logado))
                 conn.close()
                 st.success(f"✅ Lançamento duplicado com sucesso! Novo ID: {novo_id}")
                 st.rerun()
@@ -466,7 +480,7 @@ else:
             if st.session_state.get("confirmar_exclusao_id") == int(id_selecionado):
                 if st.button("Confirmar Exclusão", type="secondary", use_container_width=True):
                     conn, engine = conectar()
-                    executar_sql(conn, engine, "DELETE FROM transactions WHERE id = ?", (int(id_selecionado),))
+                    executar_sql(conn, engine, "DELETE FROM transactions WHERE id = ? AND usuario_dono = ?", (int(id_selecionado), usuario_logado))
                     conn.close()
                     st.session_state.pop("confirmar_exclusao_id", None)
                     st.success("✅ Lançamento apagado permanentemente!")
