@@ -14,31 +14,22 @@ st.logo("logo.png")
 # ============================
 st.markdown("""
 <style>
-/* 1) Diminui a sidebar (menu lateral) */
 [data-testid="stSidebar"]{
     width: 190px !important;
     min-width: 190px !important;
 }
-
-/* 2) Dá mais espaço pro conteúdo principal */
 section.main > div{
     max-width: 100% !important;
 }
-
-/* 3) Ajusta padding do conteúdo */
 .block-container{
     padding-left: 2.2rem !important;
     padding-right: 2.2rem !important;
     padding-top: 1.2rem !important;
 }
-
-/* 4) Menu lateral mais enxuto */
 [data-testid="stSidebarNav"] li a{
     padding-top: 6px !important;
     padding-bottom: 6px !important;
 }
-
-/* 5) Headers */
 h1, h2, h3 { margin-bottom: 0.2rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -87,7 +78,7 @@ def conectar_admin():
 def preparar_admin(conn, usando_postgres, db_url):
     cur = conn.cursor()
     try:
-        # Cria a tabela já completa para evitar ALTER TABLE no Postgres
+        # Tabela base
         if usando_postgres:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usuarios (
@@ -95,12 +86,16 @@ def preparar_admin(conn, usando_postgres, db_url):
                     senha TEXT,
                     db_nome TEXT,
                     empresa TEXT,
-                    ativo INTEGER DEFAULT 1,
-                    plano TEXT DEFAULT 'Starter',
-                    valor_mensal DOUBLE PRECISION DEFAULT 0,
-                    vencimento TEXT
+                    ativo INTEGER DEFAULT 1
                 )
             """)
+
+            # Migrações seguras no Postgres
+            cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1")
+            cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS plano TEXT DEFAULT 'Starter'")
+            cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_mensal DOUBLE PRECISION DEFAULT 0")
+            cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS vencimento TEXT")
+
         else:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS usuarios (
@@ -108,15 +103,11 @@ def preparar_admin(conn, usando_postgres, db_url):
                     senha TEXT,
                     db_nome TEXT,
                     empresa TEXT,
-                    ativo INTEGER DEFAULT 1,
-                    plano TEXT DEFAULT 'Starter',
-                    valor_mensal REAL DEFAULT 0,
-                    vencimento TEXT
+                    ativo INTEGER DEFAULT 1
                 )
             """)
 
-        # Garantia extra para SQLite antigo
-        if not usando_postgres:
+            # Migrações SQLite
             try:
                 cur.execute("ALTER TABLE usuarios ADD COLUMN ativo INTEGER DEFAULT 1")
             except Exception:
@@ -159,10 +150,11 @@ def preparar_admin(conn, usando_postgres, db_url):
                     None
                 ))
             else:
-                cur.execute(
-                    "UPDATE usuarios SET empresa=%s WHERE usuario=%s",
-                    ("D.Tech - Danilo Diogo", "danilo")
-                )
+                cur.execute("""
+                    UPDATE usuarios
+                    SET empresa=%s
+                    WHERE usuario=%s
+                """, ("D.Tech - Danilo Diogo", "danilo"))
 
         else:
             cur.execute("SELECT usuario FROM usuarios WHERE usuario=?", ("danilo",))
@@ -185,10 +177,11 @@ def preparar_admin(conn, usando_postgres, db_url):
                     None
                 ))
             else:
-                cur.execute(
-                    "UPDATE usuarios SET empresa=? WHERE usuario=?",
-                    ("D.Tech - Danilo Diogo", "danilo")
-                )
+                cur.execute("""
+                    UPDATE usuarios
+                    SET empresa=?
+                    WHERE usuario=?
+                """, ("D.Tech - Danilo Diogo", "danilo"))
 
         conn.commit()
 
@@ -267,7 +260,7 @@ with col1:
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                                 """, (
                                     novo_user,
-                                    None,  # primeiro acesso no Neon/Postgres
+                                    None,
                                     novo_db,
                                     nova_empresa,
                                     1,
@@ -276,10 +269,7 @@ with col1:
                                     vencimento.isoformat()
                                 ))
                                 conn.commit()
-
-                                # No cloud, tudo usa o mesmo Postgres
                                 inicializar_banco(db_ref)
-
                                 st.success(f"Cliente **{novo_user}** criado com sucesso!")
                                 st.balloons()
 
@@ -297,7 +287,7 @@ with col1:
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
                                     novo_user,
-                                    "",  # primeiro acesso no SQLite
+                                    "",
                                     novo_db,
                                     nova_empresa,
                                     1,
@@ -306,10 +296,7 @@ with col1:
                                     vencimento.isoformat()
                                 ))
                                 conn.commit()
-
-                                # No local, cria o banco do cliente
                                 inicializar_banco(novo_db)
-
                                 st.success(f"Cliente **{novo_user}** criado com sucesso!")
                                 st.balloons()
 
@@ -450,7 +437,6 @@ with col2:
 
                         b1, b2, b3, b4 = st.columns(4)
 
-                        # 1) Bloquear / Ativar
                         with b1:
                             novo_status = 0 if ativo == 1 else 1
                             label = "Bloquear" if ativo == 1 else "Ativar"
@@ -468,7 +454,6 @@ with col2:
                                     conn.rollback()
                                     st.error(f"Erro ao alterar status: {e}")
 
-                        # 2) Liberar primeiro acesso / resetar senha
                         with b2:
                             if st.button("Liberar 1º acesso", key=f"reset_{user}", use_container_width=True):
                                 try:
@@ -485,12 +470,10 @@ with col2:
                                     conn.rollback()
                                     st.error(f"Erro ao liberar primeiro acesso: {e}")
 
-                        # 3) Editar plano
                         with b3:
                             if st.button("Editar plano", key=f"edit_{user}", use_container_width=True):
                                 st.session_state[f"edit_open_{user}"] = True
 
-                        # 4) Excluir
                         with b4:
                             conf_key = f"conf_del_{user}"
                             if conf_key not in st.session_state:
@@ -518,7 +501,6 @@ with col2:
                                         conn.rollback()
                                         st.error(f"Erro ao excluir cliente: {e}")
 
-                        # painel de edição
                         if st.session_state.get(f"edit_open_{user}", False):
                             st.divider()
                             st.subheader("Editar plano / cobrança")
