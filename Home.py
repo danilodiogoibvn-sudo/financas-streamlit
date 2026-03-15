@@ -51,8 +51,6 @@ try:
 except:
     pass
 
-# ... (O restante do seu código da Home continua daqui pra baixo normalmente!) ...
-
 # Aplica toda a identidade visual de uma vez só!
 carregar_estilos()
 
@@ -101,6 +99,7 @@ inicializar_banco(st.session_state.get("db_nome", "financas.db"))
 # -----------------------------
 empresa = st.session_state.get("empresa", "")
 usuario = st.session_state.get("usuario_atual", "")
+usuario_logado = st.session_state.get("usuario_atual", "danilo")
 
 t1, t2, t3 = st.columns([2.2, 3.6, 1.4])
 with t1:
@@ -147,8 +146,7 @@ menu = st.tabs(["Visão Geral", "Análise Visual"])
 # -----------------------------
 conn, engine = conectar()
 try:
-    # Sem parâmetros aqui, então funciona igual nos dois bancos
-    df = pd.read_sql_query("""
+    query = """
         SELECT
             t.tipo,
             t.valor,
@@ -158,7 +156,10 @@ try:
             c.nome as categoria
         FROM transactions t
         LEFT JOIN categories c ON t.categoria_id = c.id
-    """, conn)
+        WHERE t.usuario_dono = ?
+    """
+    if engine == "postgres": query = query.replace("?", "%s")
+    df = pd.read_sql_query(query, conn, params=(usuario_logado,))
 finally:
     conn.close()
 
