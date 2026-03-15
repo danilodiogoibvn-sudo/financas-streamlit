@@ -12,7 +12,6 @@ from database import conectar_banco
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA
 # ==========================================
-
 st.set_page_config(
     page_title="Consultor IA | D.Tech",
     page_icon="logo.png",
@@ -21,9 +20,8 @@ st.set_page_config(
 )
 
 # ==========================================
-# ICONE IPHONE
+# ÍCONE IPHONE
 # ==========================================
-
 try:
     with open("logo.png", "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
@@ -40,18 +38,17 @@ try:
         height=0,
         width=0
     )
-except:
+except Exception:
     pass
 
 try:
     st.logo("logo.png")
-except:
+except Exception:
     pass
 
 # ==========================================
 # LOGIN + ESTILO
 # ==========================================
-
 carregar_estilos()
 exigir_login()
 
@@ -59,32 +56,23 @@ usuario_logado = st.session_state.get("usuario_atual", "danilo")
 empresa = st.session_state.get("empresa", "sua empresa")
 
 st.title("✨ Consultor Financeiro com IA")
-
 st.markdown(
-"""
-<span style='color:#A0AEC0'>
-Receba conselhos estratégicos, alertas de gastos e planos de economia baseados nos seus números reais.
-</span>
-""",
-unsafe_allow_html=True
+    "<span style='color:#A0AEC0'>Receba conselhos estratégicos, alertas de gastos e planos de economia baseados nos seus números reais.</span>",
+    unsafe_allow_html=True
 )
-
 st.divider()
 
 # ==========================================
 # BANCO DE DADOS
 # ==========================================
-
 def conectar():
     db_nome = st.session_state.get("db_nome", "financeiro.db")
     conn, engine = conectar_banco(db_nome)
     return conn, engine
 
-
 # ==========================================
 # EXTRAÇÃO DE DADOS
 # ==========================================
-
 hoje = date.today()
 mes_atual = hoje.month
 ano_atual = hoje.year
@@ -104,112 +92,120 @@ if engine == "postgres":
 df = pd.read_sql_query(query, conn, params=(usuario_logado,))
 conn.close()
 
+if df.empty:
+    df = pd.DataFrame(columns=["tipo", "valor", "data_real", "categoria"])
+
 df["data_real"] = pd.to_datetime(df["data_real"], errors="coerce")
 
 df_mes = df[
-    (df["data_real"].dt.month == mes_atual)
-    & (df["data_real"].dt.year == ano_atual)
-]
+    (df["data_real"].dt.month == mes_atual) &
+    (df["data_real"].dt.year == ano_atual)
+].copy()
 
-entradas = df_mes[df_mes["tipo"] == "Entrada"]["valor"].sum()
-saidas = df_mes[df_mes["tipo"] == "Saída"]["valor"].sum()
+entradas = df_mes.loc[df_mes["tipo"] == "Entrada", "valor"].sum()
+saidas = df_mes.loc[df_mes["tipo"] == "Saída", "valor"].sum()
 saldo = entradas - saidas
 
-df_saidas = df_mes[df_mes["tipo"] == "Saída"]
+df_saidas = df_mes[df_mes["tipo"] == "Saída"].copy()
+df_saidas["categoria"] = df_saidas["categoria"].fillna("Sem categoria")
 
 if not df_saidas.empty:
-
     top_categorias = (
         df_saidas.groupby("categoria")["valor"]
         .sum()
         .sort_values(ascending=False)
         .head(3)
     )
-
-    texto_categorias = ", ".join(
-        [f"{cat} (R$ {val:,.2f})" for cat, val in top_categorias.items()]
+    texto_categorias = "\n".join(
+        [f"- {cat}: R$ {val:,.2f}" for cat, val in top_categorias.items()]
     )
-
 else:
-    texto_categorias = "Nenhuma despesa registrada no mês."
+    texto_categorias = "- Nenhuma despesa registrada no mês."
 
 # ==========================================
-# CONFIGURAÇÃO DA IA
+# CONFIGURAÇÃO IA
 # ==========================================
-
 st.markdown("### 🧠 Inteligência Financeira")
+st.info("A análise é gerada automaticamente com base nos dados financeiros do mês atual.")
 
-st.info("A análise é gerada por inteligência artificial baseada nos dados financeiros do mês atual.")
-
-api_key = st.secrets.get("OPENAI_API_KEY", "")
+api_key = st.secrets.get("OPENAI_API_KEY")
 
 if not api_key:
-
-    st.warning("⚠️ Configure sua OPENAI_API_KEY no secrets do Streamlit.")
+    st.error("A chave OPENAI_API_KEY não foi encontrada no Secrets do Streamlit.")
     st.stop()
 
 # ==========================================
-# BOTÃO GERAR RELATÓRIO
+# BOTÃO
 # ==========================================
-
-if st.button("🧠 Gerar Análise Financeira do Mês", use_container_width=True):
-
+if st.button("🧠 Gerar Análise Financeira do Mês", use_container_width=True, type="primary"):
     with st.spinner("Analisando seus dados financeiros..."):
-
         try:
-
             client = OpenAI(api_key=api_key)
 
             prompt = f"""
 Você é um consultor financeiro especialista em gestão empresarial.
 
-Empresa: {empresa}
+Analise EXCLUSIVAMENTE os dados abaixo da empresa "{empresa}".
 
-Dados financeiros do mês atual:
+Usuário dono da análise: {usuario_logado}
 
-Receitas totais: R$ {entradas:,.2f}
-Despesas totais: R$ {saidas:,.2f}
-Saldo final: R$ {saldo:,.2f}
+Dados do mês atual:
+- Receitas totais: R$ {entradas:,.2f}
+- Despesas totais: R$ {saidas:,.2f}
+- Saldo final: R$ {saldo:,.2f}
 
 Principais categorias de gastos:
 {texto_categorias}
 
-Crie um relatório estratégico contendo:
+Monte uma resposta bonita, clara e profissional em português do Brasil com esta estrutura:
 
-1️⃣ Diagnóstico da saúde financeira
-2️⃣ Onde estão os maiores gastos
-3️⃣ 2 sugestões práticas de economia
-4️⃣ Estratégia para melhorar o próximo mês
+## Diagnóstico do mês
+Faça um resumo objetivo da saúde financeira.
 
-Use português do Brasil.
-Formate com títulos e bullet points.
+## Principais alertas
+Mostre onde estão os maiores gastos e riscos.
+
+## Oportunidades de economia
+Dê 2 dicas práticas e realistas.
+
+## Plano para o próximo mês
+Sugira próximos passos financeiros.
+
+Use linguagem encorajadora, profissional e fácil de entender.
 """
 
             resposta = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                    {
+                        "role": "system",
+                        "content": "Você é um consultor financeiro empresarial claro, estratégico e objetivo."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7
             )
 
             texto = resposta.choices[0].message.content
 
-            st.success("Análise concluída!")
+            st.success("Análise concluída com sucesso!")
 
-            st.markdown(
-"""
-<div style="background-color: rgba(0,209,255,0.05);
-border:1px solid rgba(0,209,255,0.3);
-border-radius:10px;
-padding:20px">
-""",
-unsafe_allow_html=True
-)
+            st.markdown("""
+            <div style="
+                background-color: rgba(0,209,255,0.05);
+                border:1px solid rgba(0,209,255,0.30);
+                border-radius:14px;
+                padding:22px;
+                margin-top:10px;
+            ">
+            """, unsafe_allow_html=True)
 
             st.markdown(texto)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
         except Exception as e:
-
             st.error(f"Erro ao gerar análise: {e}")
