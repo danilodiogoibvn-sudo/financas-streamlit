@@ -8,7 +8,8 @@ from google import genai
 from style import carregar_estilos
 from auth import exigir_login
 from database import conectar_banco
-
+# 👇 Importando os componentes visuais oficiais da D.Tech
+from components import metric_card, icon_svg
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA
 # ==========================================
