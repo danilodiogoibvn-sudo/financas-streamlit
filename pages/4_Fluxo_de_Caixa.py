@@ -26,6 +26,9 @@ carregar_estilos()
 
 exigir_login()
 
+# Captura quem é o usuário logado agora
+usuario_logado = st.session_state.get("usuario_atual", "danilo")
+
 st.title("Fluxo de Caixa")
 st.markdown("<span style='color: #A0AEC0;'>Visão diária das entradas, saídas e evolução do saldo acumulado.</span>", unsafe_allow_html=True)
 
@@ -71,7 +74,6 @@ else: data_inicio_padrao, data_fim_padrao = primeiro_dia_mes, ultimo_dia_mes
 
 with cC:
     d1, d2 = st.columns(2)
-    # 🚀 ADICIONADO: format="DD/MM/YYYY" para ficar no padrão brasileiro visualmente
     with d1: data_inicio = st.date_input("Data inicial", value=data_inicio_padrao, disabled=(preset != "Personalizado"), format="DD/MM/YYYY")
     with d2: data_fim = st.date_input("Data final", value=data_fim_padrao, disabled=(preset != "Personalizado"), format="DD/MM/YYYY")
 
@@ -79,13 +81,16 @@ if data_fim < data_inicio:
     data_inicio, data_fim = data_fim, data_inicio
 
 # -----------------------------
-# Dados
+# Dados (Filtrados por dono)
 # -----------------------------
 conn, engine = conectar()
 if base.startswith("Realizado"):
-    df = pd.read_sql_query("SELECT tipo, valor, data_real as data_base FROM transactions WHERE data_real IS NOT NULL", conn)
+    query = "SELECT tipo, valor, data_real as data_base FROM transactions WHERE data_real IS NOT NULL AND usuario_dono = ?"
 else:
-    df = pd.read_sql_query("SELECT tipo, valor, data_prevista as data_base FROM transactions", conn)
+    query = "SELECT tipo, valor, data_prevista as data_base FROM transactions WHERE usuario_dono = ?"
+
+if engine == "postgres": query = query.replace("?", "%s")
+df = pd.read_sql_query(query, conn, params=(usuario_logado,))
 conn.close()
 
 if df.empty:
