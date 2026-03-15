@@ -3,12 +3,15 @@ import pandas as pd
 from datetime import date
 import base64
 import streamlit.components.v1 as components
-from openai import OpenAI
+from google import genai
 
 from style import carregar_estilos
 from auth import exigir_login
 from database import conectar_banco
 
+# ==========================================
+# CONFIGURAÇÃO DA PÁGINA
+# ==========================================
 st.set_page_config(
     page_title="Consultor IA | D.Tech",
     page_icon="logo.png",
@@ -16,6 +19,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# ==========================================
+# ÍCONE IPHONE
+# ==========================================
 try:
     with open("logo.png", "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
@@ -40,6 +46,9 @@ try:
 except Exception:
     pass
 
+# ==========================================
+# LOGIN + ESTILO
+# ==========================================
 carregar_estilos()
 exigir_login()
 
@@ -53,11 +62,17 @@ st.markdown(
 )
 st.divider()
 
+# ==========================================
+# BANCO DE DADOS
+# ==========================================
 def conectar():
     db_nome = st.session_state.get("db_nome", "financeiro.db")
     conn, engine = conectar_banco(db_nome)
     return conn, engine
 
+# ==========================================
+# EXTRAÇÃO DE DADOS
+# ==========================================
 hoje = date.today()
 mes_atual = hoje.month
 ano_atual = hoje.year
@@ -87,8 +102,8 @@ df_mes = df[
     (df["data_real"].dt.year == ano_atual)
 ].copy()
 
-entradas = df_mes.loc[df_mes["tipo"] == "Entrada", "valor"].sum()
-saidas = df_mes.loc[df_mes["tipo"] == "Saída", "valor"].sum()
+entradas = float(df_mes.loc[df_mes["tipo"] == "Entrada", "valor"].sum())
+saidas = float(df_mes.loc[df_mes["tipo"] == "Saída", "valor"].sum())
 saldo = entradas - saidas
 
 df_saidas = df_mes[df_mes["tipo"] == "Saída"].copy()
@@ -107,19 +122,39 @@ if not df_saidas.empty:
 else:
     texto_categorias = "- Nenhuma despesa registrada no mês."
 
+# ==========================================
+# RESUMO VISUAL
+# ==========================================
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Receitas do mês", f"R$ {entradas:,.2f}")
+
+with col2:
+    st.metric("Despesas do mês", f"R$ {saidas:,.2f}")
+
+with col3:
+    st.metric("Saldo do mês", f"R$ {saldo:,.2f}")
+
 st.markdown("### 🧠 Inteligência Financeira")
 st.info("A análise é gerada automaticamente com base nos dados financeiros do mês atual.")
 
-api_key = st.secrets.get("OPENAI_API_KEY")
+# ==========================================
+# CHAVE DA API VIA SECRETS
+# ==========================================
+api_key = st.secrets.get("GEMINI_API_KEY")
 
 if not api_key:
-    st.error("A chave OPENAI_API_KEY não foi encontrada no Secrets do Streamlit.")
+    st.error("A chave GEMINI_API_KEY não foi encontrada no Secrets do Streamlit.")
     st.stop()
 
+# ==========================================
+# BOTÃO GERAR ANÁLISE
+# ==========================================
 if st.button("🧠 Gerar Análise Financeira do Mês", use_container_width=True, type="primary"):
     with st.spinner("Analisando seus dados financeiros..."):
         try:
-            client = OpenAI(api_key=api_key)
+            client = genai.Client(api_key=api_key)
 
             prompt = f"""
 Você é um consultor financeiro especialista em gestão empresarial.
@@ -150,25 +185,22 @@ Dê 2 dicas práticas e realistas.
 ## Plano para o próximo mês
 Sugira próximos passos financeiros.
 
-Use linguagem encorajadora, profissional e fácil de entender.
+Regras:
+- Não invente números.
+- Baseie-se apenas nos dados informados.
+- Seja direto, útil e encorajador.
 """
 
-            resposta = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Você é um consultor financeiro empresarial claro, estratégico e objetivo."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7
+            resposta = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
             )
 
-            texto = resposta.choices[0].message.content
+            texto = getattr(resposta, "text", None)
+
+            if not texto:
+                st.warning("A IA não retornou texto na resposta.")
+                st.stop()
 
             st.success("Análise concluída com sucesso!")
 
