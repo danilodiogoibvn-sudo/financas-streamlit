@@ -269,7 +269,14 @@ def checar_senha():
                     st.session_state["mostrar_criar_senha"] = False
                     return False
 
-                senha_vazia = senha_bd is None or str(senha_bd).strip() == ""
+                # --- AQUI ESTÁ A CORREÇÃO ---
+                texto_senha = str(senha_bd).strip().lower()
+                senha_vazia = (
+                    senha_bd is None or 
+                    texto_senha == "" or 
+                    "pendente" in texto_senha
+                )
+                # ----------------------------
 
                 if senha_vazia:
                     st.session_state["mostrar_criar_senha"] = True
