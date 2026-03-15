@@ -269,7 +269,9 @@ def checar_senha():
                     st.session_state["mostrar_criar_senha"] = False
                     return False
 
-                if senha_bd == "" or senha_bd is None:
+                senha_vazia = senha_bd is None or str(senha_bd).strip() == ""
+
+                if senha_vazia:
                     st.session_state["mostrar_criar_senha"] = True
                     st.session_state["empresa_tmp"] = empresa
 
@@ -278,10 +280,9 @@ def checar_senha():
                     else:
                         st.session_state["db_tmp"] = db_nome
 
-                    st.info(f"👋 Olá, equipe da **{empresa}**! Defina sua senha de acesso.")
                     st.rerun()
 
-                if senha_input != senha_bd:
+                if senha_input != str(senha_bd):
                     st.error("❌ Senha incorreta.")
                     return False
 
@@ -320,26 +321,41 @@ def checar_senha():
                         st.session_state["mostrar_criar_senha"] = False
                         return False
 
-                    if not nova_senha or nova_senha != confirma_senha:
-                        st.error("⚠️ As senhas não conferem ou estão vazias.")
+                    if not nova_senha or not confirma_senha:
+                        st.error("⚠️ Preencha os dois campos de senha.")
+                        return False
+
+                    if nova_senha != confirma_senha:
+                        st.error("⚠️ As senhas não conferem.")
                         return False
 
                     if usando_postgres:
                         cursor.execute(
                             "UPDATE usuarios SET senha=%s WHERE usuario=%s",
-                            (nova_senha, u)
+                            (nova_senha.strip(), u)
                         )
                     else:
                         cursor.execute(
                             "UPDATE usuarios SET senha=? WHERE usuario=?",
-                            (nova_senha, u)
+                            (nova_senha.strip(), u)
                         )
 
                     conn.commit()
 
-                    st.success("✅ Senha criada! Agora você já pode entrar.")
+                    # autentica direto após criar senha
+                    st.session_state["autenticado"] = True
                     st.session_state["senha_recem_criada"] = True
                     st.session_state["mostrar_criar_senha"] = False
+                    st.session_state["usuario_atual"] = u
+                    st.session_state["empresa"] = st.session_state.get("empresa_tmp", "")
+
+                    if usando_postgres:
+                        st.session_state["db_nome"] = db_url
+                    else:
+                        st.session_state["db_nome"] = st.session_state.get("db_tmp", "")
+
+                    inicializar_banco(st.session_state["db_nome"])
+                    st.success("✅ Senha criada com sucesso!")
                     st.rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)
