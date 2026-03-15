@@ -2,7 +2,6 @@ import sqlite3
 import os
 import streamlit as st
 
-
 class CachedConnection:
     """
     Wrapper usado SOMENTE para SQLite cacheado.
@@ -72,7 +71,7 @@ def conectar_banco(nome_db):
 
 def inicializar_banco(nome_db):
     """
-    Cria as tabelas se elas não existirem.
+    Cria as tabelas se elas não existirem e adiciona a coluna de multi-usuário.
     """
     conn, engine = conectar_banco(nome_db)
     cursor = None
@@ -85,7 +84,8 @@ def inicializar_banco(nome_db):
                 CREATE TABLE IF NOT EXISTS accounts (
                     id SERIAL PRIMARY KEY,
                     nome TEXT NOT NULL,
-                    tipo TEXT NOT NULL
+                    tipo TEXT NOT NULL,
+                    usuario_dono TEXT DEFAULT 'danilo'
                 )
             """)
 
@@ -93,7 +93,8 @@ def inicializar_banco(nome_db):
                 CREATE TABLE IF NOT EXISTS categories (
                     id SERIAL PRIMARY KEY,
                     nome TEXT NOT NULL,
-                    tipo TEXT NOT NULL
+                    tipo TEXT NOT NULL,
+                    usuario_dono TEXT DEFAULT 'danilo'
                 )
             """)
 
@@ -108,17 +109,24 @@ def inicializar_banco(nome_db):
                     status TEXT NOT NULL,
                     conta_id INTEGER,
                     categoria_id INTEGER,
+                    usuario_dono TEXT DEFAULT 'danilo',
                     FOREIGN KEY (conta_id) REFERENCES accounts(id),
                     FOREIGN KEY (categoria_id) REFERENCES categories(id)
                 )
             """)
+
+            # 🚀 MÁGICA DE ATUALIZAÇÃO (Atualiza as tabelas velhas sem apagar os dados)
+            cursor.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS usuario_dono TEXT DEFAULT 'danilo'")
+            cursor.execute("ALTER TABLE categories ADD COLUMN IF NOT EXISTS usuario_dono TEXT DEFAULT 'danilo'")
+            cursor.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS usuario_dono TEXT DEFAULT 'danilo'")
 
         else:  # sqlite
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nome TEXT NOT NULL,
-                    tipo TEXT NOT NULL
+                    tipo TEXT NOT NULL,
+                    usuario_dono TEXT DEFAULT 'danilo'
                 )
             """)
 
@@ -126,7 +134,8 @@ def inicializar_banco(nome_db):
                 CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nome TEXT NOT NULL,
-                    tipo TEXT NOT NULL
+                    tipo TEXT NOT NULL,
+                    usuario_dono TEXT DEFAULT 'danilo'
                 )
             """)
 
@@ -141,10 +150,18 @@ def inicializar_banco(nome_db):
                     status TEXT NOT NULL,
                     conta_id INTEGER,
                     categoria_id INTEGER,
+                    usuario_dono TEXT DEFAULT 'danilo',
                     FOREIGN KEY (conta_id) REFERENCES accounts(id),
                     FOREIGN KEY (categoria_id) REFERENCES categories(id)
                 )
             """)
+
+            # 🚀 MÁGICA DE ATUALIZAÇÃO PARA SQLITE
+            for tabela in ["accounts", "categories", "transactions"]:
+                try:
+                    cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN usuario_dono TEXT DEFAULT 'danilo'")
+                except Exception:
+                    pass # Se a coluna já existir, ele só ignora e segue a vida.
 
         conn.commit()
 
