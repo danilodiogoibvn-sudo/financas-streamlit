@@ -118,7 +118,7 @@ if st.button("🧠 Gerar Análise Financeira do Mês", type="primary", use_conta
         try:
             # Configura a IA
             genai.configure(api_key=api_key)
-            modelo = genai.GenerativeModel('gemini-1.5-flash')
+            modelo = genai.GenerativeModel('gemini-1.5-pro')
             
             # O "Prompt Invisível" que cria a mágica
             prompt = f"""
