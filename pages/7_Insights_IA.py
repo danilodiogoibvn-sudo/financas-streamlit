@@ -10,6 +10,7 @@ from auth import exigir_login
 from database import conectar_banco
 # 👇 Importando os componentes visuais oficiais da D.Tech
 from components import metric_card, icon_svg
+
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA
 # ==========================================
@@ -64,12 +65,16 @@ st.markdown(
 st.divider()
 
 # ==========================================
-# BANCO DE DADOS
+# BANCO DE DADOS E HELPERS
 # ==========================================
 def conectar():
     db_nome = st.session_state.get("db_nome", "financeiro.db")
     conn, engine = conectar_banco(db_nome)
     return conn, engine
+
+def fmt_brl(x: float) -> str:
+    try: return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except: return "R$ 0,00"
 
 # ==========================================
 # EXTRAÇÃO DE DADOS
@@ -124,18 +129,18 @@ else:
     texto_categorias = "- Nenhuma despesa registrada no mês."
 
 # ==========================================
-# RESUMO VISUAL
+# RESUMO VISUAL (AGORA PADRÃO D.TECH!)
 # ==========================================
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Receitas do mês", f"R$ {entradas:,.2f}")
+    metric_card("Receitas do mês", fmt_brl(entradas), "Total que entrou", "green", icon_svg("up"))
 
 with col2:
-    st.metric("Despesas do mês", f"R$ {saidas:,.2f}")
+    metric_card("Despesas do mês", fmt_brl(saidas), "Total que saiu", "red" if saidas > 0 else "gray", icon_svg("down"))
 
 with col3:
-    st.metric("Saldo do mês", f"R$ {saldo:,.2f}")
+    metric_card("Saldo do mês", fmt_brl(saldo), "Resultado final", "green" if saldo >= 0 else "red", icon_svg("wallet"))
 
 st.markdown("### 🧠 Inteligência Financeira")
 st.info("A análise é gerada automaticamente com base nos dados financeiros do mês atual.")
@@ -158,39 +163,39 @@ if st.button("🧠 Gerar Análise Financeira do Mês", use_container_width=True,
             client = genai.Client(api_key=api_key)
 
             prompt = f"""
-Você é um consultor financeiro especialista em gestão empresarial.
+            Você é um consultor financeiro especialista em gestão empresarial.
 
-Analise EXCLUSIVAMENTE os dados abaixo da empresa "{empresa}".
+            Analise EXCLUSIVAMENTE os dados abaixo da empresa "{empresa}".
 
-Usuário dono da análise: {usuario_logado}
+            Usuário dono da análise: {usuario_logado}
 
-Dados do mês atual:
-- Receitas totais: R$ {entradas:,.2f}
-- Despesas totais: R$ {saidas:,.2f}
-- Saldo final: R$ {saldo:,.2f}
+            Dados do mês atual:
+            - Receitas totais: R$ {entradas:,.2f}
+            - Despesas totais: R$ {saidas:,.2f}
+            - Saldo final: R$ {saldo:,.2f}
 
-Principais categorias de gastos:
-{texto_categorias}
+            Principais categorias de gastos:
+            {texto_categorias}
 
-Monte uma resposta bonita, clara e profissional em português do Brasil com esta estrutura:
+            Monte uma resposta bonita, clara e profissional em português do Brasil com esta estrutura:
 
-## Diagnóstico do mês
-Faça um resumo objetivo da saúde financeira.
+            ## Diagnóstico do mês
+            Faça um resumo objetivo da saúde financeira.
 
-## Principais alertas
-Mostre onde estão os maiores gastos e riscos.
+            ## Principais alertas
+            Mostre onde estão os maiores gastos e riscos.
 
-## Oportunidades de economia
-Dê 2 dicas práticas e realistas.
+            ## Oportunidades de economia
+            Dê 2 dicas práticas e realistas.
 
-## Plano para o próximo mês
-Sugira próximos passos financeiros.
+            ## Plano para o próximo mês
+            Sugira próximos passos financeiros.
 
-Regras:
-- Não invente números.
-- Baseie-se apenas nos dados informados.
-- Seja direto, útil e encorajador.
-"""
+            Regras:
+            - Não invente números.
+            - Baseie-se apenas nos dados informados.
+            - Seja direto, útil e encorajador.
+            """
 
             resposta = client.models.generate_content(
                 model="gemini-2.5-flash",
