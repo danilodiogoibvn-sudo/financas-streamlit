@@ -8,8 +8,8 @@ from database import conectar_banco
 
 # 1) Configuração
 st.set_page_config(
-    page_title="Contas a Pagar | D.Tech", 
-    page_icon="logo.png",  # <-- O SEGREDO ESTÁ AQUI!
+    page_title="Cadastros | D.Tech", 
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -30,6 +30,9 @@ th { text-align: left; font-weight: 800; }
 """, unsafe_allow_html=True)
 
 exigir_login()
+
+# Captura quem é o usuário logado agora
+usuario_logado = st.session_state.get("usuario_atual", "danilo")
 
 st.title("Cadastros")
 st.markdown("<span style='color: #A0AEC0;'>Gerencie contas bancárias/caixa e categorias de receitas e despesas.</span>", unsafe_allow_html=True)
@@ -69,7 +72,8 @@ with tab1:
             if submit_conta:
                 if nome_conta.strip():
                     conn, engine = conectar()
-                    executar_sql(conn, engine, "INSERT INTO accounts (nome, tipo) VALUES (?, ?)", (nome_conta.strip(), tipo_conta))
+                    # Salva a conta com a etiqueta do usuário
+                    executar_sql(conn, engine, "INSERT INTO accounts (nome, tipo, usuario_dono) VALUES (?, ?, ?)", (nome_conta.strip(), tipo_conta, usuario_logado))
                     conn.close()
                     st.success("Conta cadastrada com sucesso.")
                     st.rerun()
@@ -80,7 +84,9 @@ with tab1:
         st.subheader("Ação rápida")
 
         conn, engine = conectar()
-        df_contas_raw = pd.read_sql_query("SELECT id, nome, tipo FROM accounts ORDER BY id DESC", conn)
+        query_contas_raw = "SELECT id, nome, tipo FROM accounts WHERE usuario_dono=? ORDER BY id DESC"
+        if engine == "postgres": query_contas_raw = query_contas_raw.replace("?", "%s")
+        df_contas_raw = pd.read_sql_query(query_contas_raw, conn, params=(usuario_logado,))
         conn.close()
 
         if df_contas_raw.empty:
@@ -102,7 +108,7 @@ with tab1:
                     if st.button("Confirmar exclusão", key="btn_confirmar_excluir_conta", type="primary", use_container_width=True):
                         conn, engine = conectar()
                         try:
-                            executar_sql(conn, engine, "DELETE FROM accounts WHERE id=?", (id_sel,))
+                            executar_sql(conn, engine, "DELETE FROM accounts WHERE id=? AND usuario_dono=?", (id_sel, usuario_logado))
                             st.success("Conta excluída.")
                         except Exception as e:
                             st.error("Não foi possível excluir. Talvez existam lançamentos vinculados a esta conta.")
@@ -117,7 +123,9 @@ with tab1:
         busca = st.text_input("Buscar conta", placeholder="Digite para filtrar...", key="busca_conta")
 
         conn, engine = conectar()
-        df_contas = pd.read_sql_query("SELECT id as ID, nome as Nome, tipo as Tipo FROM accounts ORDER BY id DESC", conn)
+        query_contas = "SELECT id as ID, nome as Nome, tipo as Tipo FROM accounts WHERE usuario_dono=? ORDER BY id DESC"
+        if engine == "postgres": query_contas = query_contas.replace("?", "%s")
+        df_contas = pd.read_sql_query(query_contas, conn, params=(usuario_logado,))
         conn.close()
 
         if busca.strip():
@@ -157,7 +165,7 @@ with tab2:
             if submit_categoria:
                 if nome_categoria.strip():
                     conn, engine = conectar()
-                    executar_sql(conn, engine, "INSERT INTO categories (nome, tipo) VALUES (?, ?)", (nome_categoria.strip(), tipo_categoria))
+                    executar_sql(conn, engine, "INSERT INTO categories (nome, tipo, usuario_dono) VALUES (?, ?, ?)", (nome_categoria.strip(), tipo_categoria, usuario_logado))
                     conn.close()
                     st.success("Categoria cadastrada com sucesso.")
                     st.rerun()
@@ -168,7 +176,9 @@ with tab2:
         st.subheader("Ação rápida")
 
         conn, engine = conectar()
-        df_cat_raw = pd.read_sql_query("SELECT id, nome, tipo FROM categories ORDER BY id DESC", conn)
+        query_cat_raw = "SELECT id, nome, tipo FROM categories WHERE usuario_dono=? ORDER BY id DESC"
+        if engine == "postgres": query_cat_raw = query_cat_raw.replace("?", "%s")
+        df_cat_raw = pd.read_sql_query(query_cat_raw, conn, params=(usuario_logado,))
         conn.close()
 
         if df_cat_raw.empty:
@@ -190,7 +200,7 @@ with tab2:
                     if st.button("Confirmar exclusão", key="btn_confirmar_excluir_cat", type="primary", use_container_width=True):
                         conn, engine = conectar()
                         try:
-                            executar_sql(conn, engine, "DELETE FROM categories WHERE id=?", (id_sel,))
+                            executar_sql(conn, engine, "DELETE FROM categories WHERE id=? AND usuario_dono=?", (id_sel, usuario_logado))
                             st.success("Categoria excluída.")
                         except Exception as e:
                             st.error("Não foi possível excluir. Talvez existam lançamentos vinculados a esta categoria.")
@@ -205,7 +215,9 @@ with tab2:
         busca = st.text_input("Buscar categoria", placeholder="Digite para filtrar...", key="busca_cat")
 
         conn, engine = conectar()
-        df_categorias = pd.read_sql_query("SELECT id as ID, nome as Nome, tipo as Tipo FROM categories ORDER BY id DESC", conn)
+        query_categorias = "SELECT id as ID, nome as Nome, tipo as Tipo FROM categories WHERE usuario_dono=? ORDER BY id DESC"
+        if engine == "postgres": query_categorias = query_categorias.replace("?", "%s")
+        df_categorias = pd.read_sql_query(query_categorias, conn, params=(usuario_logado,))
         conn.close()
 
         if busca.strip():
