@@ -28,11 +28,6 @@ def fazer_logout():
 # Guard / páginas internas
 # ----------------------------
 def exigir_login():
-    """
-    Use nas outras páginas:
-    - Não mostra tela de login
-    - Se não estiver logado, trava acesso
-    """
     if st.session_state.get("autenticado"):
         return
 
@@ -137,6 +132,48 @@ def preparar_admin(conn, usando_postgres, db_url):
 
 
 # ----------------------------
+# Força usuário para primeiro acesso
+# ----------------------------
+def liberar_primeiro_acesso(conn, cursor, usando_postgres, usuario):
+    if usando_postgres:
+        cursor.execute(
+            "SELECT db_nome, empresa, ativo FROM usuarios WHERE usuario=%s",
+            (usuario,)
+        )
+    else:
+        cursor.execute(
+            "SELECT db_nome, empresa, ativo FROM usuarios WHERE usuario=?",
+            (usuario,)
+        )
+
+    resultado = cursor.fetchone()
+
+    if not resultado:
+        return False, "⚠️ Usuário não encontrado.", None, None
+
+    db_nome, empresa, ativo = resultado
+
+    if int(ativo) == 0:
+        return False, "🚫 Usuário bloqueado/inativo.", None, None
+
+    if usando_postgres:
+        cursor.execute(
+            "UPDATE usuarios SET senha=%s WHERE usuario=%s",
+            (None, usuario)
+        )
+        db_ref = os.getenv("DATABASE_URL", "").strip()
+    else:
+        cursor.execute(
+            "UPDATE usuarios SET senha=? WHERE usuario=?",
+            ("", usuario)
+        )
+        db_ref = db_nome
+
+    conn.commit()
+    return True, "", empresa, db_ref
+
+
+# ----------------------------
 # LOGIN
 # ----------------------------
 def checar_senha():
@@ -231,11 +268,40 @@ def checar_senha():
                 if not st.session_state.get("mostrar_criar_senha", False):
                     senha_input = st.text_input("Digite sua Senha", type="password")
 
-                submit_login = st.form_submit_button(
-                    "Entrar",
-                    type="primary",
-                    use_container_width=True
+                c1, c2 = st.columns(2)
+                with c1:
+                    submit_login = st.form_submit_button(
+                        "Entrar",
+                        type="primary",
+                        use_container_width=True
+                    )
+                with c2:
+                    submit_primeiro = st.form_submit_button(
+                        "Primeiro acesso",
+                        use_container_width=True
+                    )
+
+            if submit_primeiro:
+                st.session_state["login_user_candidate"] = usuario_input
+
+                if not usuario_input:
+                    st.error("⚠️ Digite seu usuário para liberar o primeiro acesso.")
+                    return False
+
+                ok, msg, empresa, db_ref = liberar_primeiro_acesso(
+                    conn, cursor, usando_postgres, usuario_input
                 )
+
+                if not ok:
+                    st.error(msg)
+                    st.session_state["mostrar_criar_senha"] = False
+                    return False
+
+                st.session_state["mostrar_criar_senha"] = True
+                st.session_state["empresa_tmp"] = empresa
+                st.session_state["db_tmp"] = db_ref
+                st.success("✅ Primeiro acesso liberado. Agora crie sua senha abaixo.")
+                st.rerun()
 
             if submit_login:
                 st.session_state["login_user_candidate"] = usuario_input
@@ -269,24 +335,17 @@ def checar_senha():
                     st.session_state["mostrar_criar_senha"] = False
                     return False
 
-                # --- AQUI ESTÁ A CORREÇÃO ---
-                texto_senha = str(senha_bd).strip().lower()
                 senha_vazia = (
-                    senha_bd is None or 
-                    texto_senha == "" or 
-                    "pendente" in texto_senha
+                    senha_bd is None
+                    or str(senha_bd).strip() == ""
+                    or str(senha_bd).strip().lower() in ["null", "none"]
                 )
-                # ----------------------------
 
                 if senha_vazia:
                     st.session_state["mostrar_criar_senha"] = True
                     st.session_state["empresa_tmp"] = empresa
-
-                    if usando_postgres:
-                        st.session_state["db_tmp"] = db_url
-                    else:
-                        st.session_state["db_tmp"] = db_nome
-
+                    st.session_state["db_tmp"] = db_url if usando_postgres else db_nome
+                    st.info("👋 Primeiro acesso detectado. Crie sua senha abaixo.")
                     st.rerun()
 
                 if senha_input != str(senha_bd):
@@ -294,12 +353,7 @@ def checar_senha():
                     return False
 
                 st.session_state["autenticado"] = True
-
-                if usando_postgres:
-                    st.session_state["db_nome"] = db_url
-                else:
-                    st.session_state["db_nome"] = db_nome
-
+                st.session_state["db_nome"] = db_url if usando_postgres else db_nome
                 st.session_state["empresa"] = empresa
                 st.session_state["usuario_atual"] = usuario_input
 
@@ -349,17 +403,12 @@ def checar_senha():
 
                     conn.commit()
 
-                    # autentica direto após criar senha
                     st.session_state["autenticado"] = True
                     st.session_state["senha_recem_criada"] = True
                     st.session_state["mostrar_criar_senha"] = False
                     st.session_state["usuario_atual"] = u
                     st.session_state["empresa"] = st.session_state.get("empresa_tmp", "")
-
-                    if usando_postgres:
-                        st.session_state["db_nome"] = db_url
-                    else:
-                        st.session_state["db_nome"] = st.session_state.get("db_tmp", "")
+                    st.session_state["db_nome"] = db_url if usando_postgres else st.session_state.get("db_tmp", "")
 
                     inicializar_banco(st.session_state["db_nome"])
                     st.success("✅ Senha criada com sucesso!")
